@@ -439,6 +439,67 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                         op.location,
                     )?;
                 }
+                OperationKind::LoadElem => {
+                    if op.operands.len() < 3 {
+                        return Err(VerifyError::new(
+                            "air.load_elem expects slice, index, and at least one proof operand",
+                        ));
+                    }
+                    validate_type_list(&op.result_types, &index_params)?;
+                    let slice_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[0],
+                        &mut uses,
+                    )?;
+                    if !slice_ty.as_str().starts_with("!air.slice<") {
+                        return Err(VerifyError::new(format!(
+                            "air.load_elem first operand must be slice type, found {}",
+                            slice_ty.as_str()
+                        )));
+                    }
+                    let index_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[1],
+                        &mut uses,
+                    )?;
+                    if index_ty.as_str() != "index" {
+                        return Err(VerifyError::new(format!(
+                            "air.load_elem index must have type index, found {}",
+                            index_ty.as_str()
+                        )));
+                    }
+                    for proof_operand in &op.operands[2..] {
+                        let proof_ty = check_operand(
+                            &definitions,
+                            &dominators,
+                            block_idx,
+                            proof_operand,
+                            &mut uses,
+                        )?;
+                        if !is_proof_type(&proof_ty) {
+                            return Err(VerifyError::new(format!(
+                                "air.load_elem requires proof operands, found {}",
+                                proof_ty.as_str()
+                            )));
+                        }
+                    }
+                    if op.results.len() != 1 || op.result_types.len() != 1 {
+                        return Err(VerifyError::new(
+                            "air.load_elem must produce exactly one result value and type",
+                        ));
+                    }
+                    insert_definition(
+                        &mut definitions,
+                        op.results[0].as_str(),
+                        op.result_types[0].clone(),
+                        DefinitionOrigin::Op { block: block_idx },
+                        op.location,
+                    )?;
+                }
                 OperationKind::Store => {
                     if op.operands.len() != 3 {
                         return Err(VerifyError::new(
@@ -1642,6 +1703,123 @@ mod tests {
         let err = verify_module(&module).expect_err("cond_br should require i1 condition");
         assert!(
             err.message.contains("cond_br condition must have type i1"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn load_elem_with_proof_verifies() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("main"),
+            vec![IndexParam {
+                name: ValueId::new("n"),
+                location: loc(),
+            }],
+            vec![
+                Argument {
+                    name: ValueId::new("xs"),
+                    ty: Type::new("!air.slice<i32, %n>"),
+                    location: loc(),
+                },
+                Argument {
+                    name: ValueId::new("idx"),
+                    ty: Type::new("index"),
+                    location: loc(),
+                },
+            ],
+            Some(Type::new("i32")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("zero")],
+            kind: OperationKind::ConstI64(0),
+            operands: Vec::new(),
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("cond")],
+            kind: OperationKind::ICmp {
+                predicate: IcmpPredicate::Eq,
+            },
+            operands: vec![ValueId::new("zero"), ValueId::new("zero")],
+            result_types: vec![Type::new("i1")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("pf")],
+            kind: OperationKind::Assume,
+            operands: vec![ValueId::new("cond")],
+            result_types: vec![Type::new("!air.proof<%n > 0>")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("value")],
+            kind: OperationKind::LoadElem,
+            operands: vec![ValueId::new("xs"), ValueId::new("idx"), ValueId::new("pf")],
+            result_types: vec![Type::new("i32")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("value")],
+            result_types: vec![Type::new("i32")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        verify_module(&module).expect("load_elem with proof should verify");
+    }
+
+    #[test]
+    fn load_elem_missing_proof_is_error() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("main"),
+            vec![IndexParam {
+                name: ValueId::new("n"),
+                location: loc(),
+            }],
+            vec![
+                Argument {
+                    name: ValueId::new("xs"),
+                    ty: Type::new("!air.slice<i32, %n>"),
+                    location: loc(),
+                },
+                Argument {
+                    name: ValueId::new("idx"),
+                    ty: Type::new("index"),
+                    location: loc(),
+                },
+            ],
+            Some(Type::new("i32")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("value")],
+            kind: OperationKind::LoadElem,
+            operands: vec![ValueId::new("xs"), ValueId::new("idx")],
+            result_types: vec![Type::new("i32")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("value")],
+            result_types: vec![Type::new("i32")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        let err = verify_module(&module).expect_err("load_elem without proof should fail");
+        assert!(
+            err.message
+                .contains("expects slice, index, and at least one proof operand"),
             "unexpected error: {}",
             err
         );

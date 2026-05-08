@@ -104,4 +104,25 @@ air.module @m {
             Some("!air.tensor<f32, [%n, %m]>")
         );
     }
+
+    #[test]
+    fn parse_load_elem_operation() {
+        let source = r#"
+air.module @m {
+  air.func @access forall (%n: index) (%xs: !air.slice<i32, %n>, %idx: index, %pf: !air.proof<%idx < %n>) -> i32 {
+  ^entry:
+    %value = air.load_elem %xs[%idx] requires %pf : (!air.slice<i32, %n>, index) -> i32
+    air.return %value : i32
+  }
+}
+"#;
+        let module = parse_module(source).expect("module parses");
+        let func = module.functions.values().next().expect("function present");
+        assert_eq!(func.blocks[0].ops.len(), 2);
+        let load = &func.blocks[0].ops[0];
+        assert!(matches!(load.kind, OperationKind::LoadElem));
+        assert_eq!(load.operands.len(), 3);
+        assert_eq!(load.results.len(), 1);
+        assert_eq!(load.result_types[0].as_str(), "i32");
+    }
 }

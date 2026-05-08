@@ -150,6 +150,7 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                 }
                 OperationKind::Alloc
                 | OperationKind::Load
+                | OperationKind::LoadElem
                 | OperationKind::Store
                 | OperationKind::Assume
                 | OperationKind::Assert => {

@@ -207,6 +207,9 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
         if let Some(rest) = rhs_trimmed.strip_prefix("air.alloc") {
             return parse_alloc(results, rest, line);
         }
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.load_elem") {
+            return parse_load_elem(results, rest, line);
+        }
         if let Some(rest) = rhs_trimmed.strip_prefix("air.load") {
             return parse_load(results, rest, line);
         }
@@ -553,6 +556,39 @@ fn parse_load(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operatio
     })
 }
 
+fn parse_load_elem(
+    results: Vec<ValueId>,
+    rest: &str,
+    line: &Line,
+) -> Result<Operation, ParseError> {
+    if results.len() != 1 {
+        return Err(ParseError::new(
+            "air.load_elem must produce exactly one result",
+            line.location(),
+        ));
+    }
+    let trimmed = rest.trim();
+    let (access_part, type_part) = trimmed.split_once(':').ok_or_else(|| {
+        ParseError::new(
+            "air.load_elem requires type annotation after ':'",
+            line.location(),
+        )
+    })?;
+    let (access_expr, requires_part) = access_part
+        .split_once("requires")
+        .map(|(lhs, rhs)| (lhs.trim(), Some(rhs.trim())))
+        .unwrap_or((access_part.trim(), None));
+    let operands = parse_load_elem_operands(access_expr, requires_part, line)?;
+    let result_types = parse_result_types(type_part, line.location())?;
+    Ok(Operation {
+        results,
+        kind: OperationKind::LoadElem,
+        operands,
+        result_types,
+        location: line.location(),
+    })
+}
+
 fn parse_store(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
     if results.len() != 1 {
         return Err(ParseError::new(
@@ -576,6 +612,55 @@ fn parse_store(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operati
         result_types,
         location: line.location(),
     })
+}
+
+fn parse_load_elem_operands(
+    access_expr: &str,
+    requires_part: Option<&str>,
+    line: &Line,
+) -> Result<Vec<ValueId>, ParseError> {
+    let trimmed = access_expr.trim();
+    let open = trimmed.find('[').ok_or_else(|| {
+        ParseError::new("air.load_elem expects '%slice[%index]'", line.location())
+    })?;
+    let close = trimmed
+        .rfind(']')
+        .ok_or_else(|| ParseError::new("air.load_elem expects closing ']'", line.location()))?;
+    if close < open {
+        return Err(ParseError::new(
+            "air.load_elem has malformed index expression",
+            line.location(),
+        ));
+    }
+    let slice_token = trimmed[..open].trim();
+    let index_token = trimmed[open + 1..close].trim();
+    let trailing = trimmed[close + 1..].trim();
+    if !trailing.is_empty() {
+        return Err(ParseError::new(
+            "unexpected tokens after index expression",
+            line.location(),
+        ));
+    }
+    if !slice_token.starts_with('%') {
+        return Err(ParseError::new(
+            "air.load_elem slice must be an SSA value",
+            line.location(),
+        ));
+    }
+    if !index_token.starts_with('%') {
+        return Err(ParseError::new(
+            "air.load_elem index must be an SSA value",
+            line.location(),
+        ));
+    }
+    let mut operands = Vec::new();
+    operands.push(ValueId::new(slice_token.trim_start_matches('%')));
+    operands.push(ValueId::new(index_token.trim_start_matches('%')));
+    if let Some(reqs) = requires_part {
+        let proofs = parse_value_list(reqs, line.location())?;
+        operands.extend(proofs);
+    }
+    Ok(operands)
 }
 
 fn parse_assume(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {

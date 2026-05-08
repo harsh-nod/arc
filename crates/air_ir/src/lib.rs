@@ -245,6 +245,7 @@ pub enum OperationKind {
     Alloc,
     Load,
     Store,
+    LoadElem,
     Assume,
     Assert,
     Branch {
