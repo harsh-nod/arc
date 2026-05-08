@@ -190,10 +190,10 @@ impl Block {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Operation {
-    pub result: Option<ValueId>,
+    pub results: Vec<ValueId>,
     pub kind: OperationKind,
     pub operands: Vec<ValueId>,
-    pub result_type: Option<Type>,
+    pub result_types: Vec<Type>,
     pub location: Location,
 }
 
@@ -229,6 +229,9 @@ pub enum OperationKind {
     ICmp {
         predicate: IcmpPredicate,
     },
+    Alloc,
+    Load,
+    Store,
     Branch {
         target: BlockTarget,
     },

@@ -126,14 +126,18 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
         for op in &block.ops {
             match &op.kind {
                 OperationKind::ConstI64(_) => {
-                    let ty = op
-                        .result_type
-                        .clone()
-                        .ok_or_else(|| VerifyError::new("const must declare a result type"))?;
-                    let result = op
-                        .result
-                        .as_ref()
-                        .ok_or_else(|| VerifyError::new("const must produce result"))?;
+                    if op.result_types.len() != 1 {
+                        return Err(VerifyError::new(
+                            "const must declare exactly one result type",
+                        ));
+                    }
+                    if op.results.len() != 1 {
+                        return Err(VerifyError::new(
+                            "const must produce exactly one result value",
+                        ));
+                    }
+                    let ty = op.result_types[0].clone();
+                    let result = &op.results[0];
                     insert_definition(
                         &mut definitions,
                         result.as_str(),
@@ -168,19 +172,23 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                             "binary arithmetic operands must share type",
                         ));
                     }
-                    let result_ty = op
-                        .result_type
-                        .clone()
-                        .ok_or_else(|| VerifyError::new("binary arithmetic must declare result"))?;
+                    if op.result_types.len() != 1 {
+                        return Err(VerifyError::new(
+                            "binary arithmetic must declare exactly one result type",
+                        ));
+                    }
+                    if op.results.len() != 1 {
+                        return Err(VerifyError::new(
+                            "binary arithmetic must produce exactly one result value",
+                        ));
+                    }
+                    let result_ty = op.result_types[0].clone();
                     if result_ty != lhs_ty {
                         return Err(VerifyError::new(
                             "binary arithmetic result type must match operand type",
                         ));
                     }
-                    let result = op
-                        .result
-                        .as_ref()
-                        .ok_or_else(|| VerifyError::new("binary arithmetic missing result SSA"))?;
+                    let result = &op.results[0];
                     insert_definition(
                         &mut definitions,
                         result.as_str(),
@@ -210,20 +218,24 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                     if lhs_ty != rhs_ty {
                         return Err(VerifyError::new("icmp operands must share type"));
                     }
-                    let result_ty = op
-                        .result_type
-                        .clone()
-                        .ok_or_else(|| VerifyError::new("icmp must declare result type"))?;
+                    if op.result_types.len() != 1 {
+                        return Err(VerifyError::new(
+                            "icmp must declare exactly one result type",
+                        ));
+                    }
+                    if op.results.len() != 1 {
+                        return Err(VerifyError::new(
+                            "icmp must produce exactly one result value",
+                        ));
+                    }
+                    let result_ty = op.result_types[0].clone();
                     if result_ty != Type::new("i1") {
                         return Err(VerifyError::new(format!(
                             "icmp result must have type i1, found {}",
                             result_ty.as_str()
                         )));
                     }
-                    let result = op
-                        .result
-                        .as_ref()
-                        .ok_or_else(|| VerifyError::new("icmp missing result SSA"))?;
+                    let result = &op.results[0];
                     insert_definition(
                         &mut definitions,
                         result.as_str(),
@@ -279,8 +291,224 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                         &mut uses,
                     )?;
                 }
+                OperationKind::Alloc => {
+                    if op.operands.len() != 2 {
+                        return Err(VerifyError::new(
+                            "air.alloc expects memory and size operands",
+                        ));
+                    }
+                    let mem_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[0],
+                        &mut uses,
+                    )?;
+                    if !is_resource_type(&mem_ty) || mem_ty.as_str() != "!air.mem" {
+                        return Err(VerifyError::new(
+                            "air.alloc first operand must be !air.mem resource",
+                        ));
+                    }
+                    let size_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[1],
+                        &mut uses,
+                    )?;
+                    if size_ty.as_str() != "index" {
+                        return Err(VerifyError::new(format!(
+                            "air.alloc size operand must have type index, found {}",
+                            size_ty.as_str()
+                        )));
+                    }
+                    if op.results.len() != 2 || op.result_types.len() != 2 {
+                        return Err(VerifyError::new(
+                            "air.alloc must produce updated memory and pointer results",
+                        ));
+                    }
+                    let new_mem_ty = op.result_types[0].clone();
+                    if new_mem_ty != mem_ty {
+                        return Err(VerifyError::new(format!(
+                            "air.alloc must return updated memory of type {}, found {}",
+                            mem_ty.as_str(),
+                            new_mem_ty.as_str()
+                        )));
+                    }
+                    let ptr_ty = op.result_types[1].clone();
+                    if !is_pointer_type(&ptr_ty) {
+                        return Err(VerifyError::new(format!(
+                            "air.alloc second result must be pointer type, found {}",
+                            ptr_ty.as_str()
+                        )));
+                    }
+                    insert_definition(
+                        &mut definitions,
+                        op.results[0].as_str(),
+                        new_mem_ty,
+                        DefinitionOrigin::Op { block: block_idx },
+                        op.location,
+                    )?;
+                    insert_definition(
+                        &mut definitions,
+                        op.results[1].as_str(),
+                        ptr_ty,
+                        DefinitionOrigin::Op { block: block_idx },
+                        op.location,
+                    )?;
+                }
+                OperationKind::Load => {
+                    if op.operands.len() != 2 {
+                        return Err(VerifyError::new(
+                            "air.load expects memory and pointer operands",
+                        ));
+                    }
+                    let mem_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[0],
+                        &mut uses,
+                    )?;
+                    if mem_ty.as_str() != "!air.mem" {
+                        return Err(VerifyError::new(format!(
+                            "air.load first operand must be !air.mem, found {}",
+                            mem_ty.as_str()
+                        )));
+                    }
+                    let ptr_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[1],
+                        &mut uses,
+                    )?;
+                    if !is_pointer_type(&ptr_ty) {
+                        return Err(VerifyError::new(format!(
+                            "air.load pointer operand must be pointer type, found {}",
+                            ptr_ty.as_str()
+                        )));
+                    }
+                    if op.results.len() != 2 || op.result_types.len() != 2 {
+                        return Err(VerifyError::new(
+                            "air.load must return updated memory and loaded value",
+                        ));
+                    }
+                    let new_mem_ty = op.result_types[0].clone();
+                    if new_mem_ty != mem_ty {
+                        return Err(VerifyError::new(format!(
+                            "air.load must return memory of type {}, found {}",
+                            mem_ty.as_str(),
+                            new_mem_ty.as_str()
+                        )));
+                    }
+                    insert_definition(
+                        &mut definitions,
+                        op.results[0].as_str(),
+                        new_mem_ty,
+                        DefinitionOrigin::Op { block: block_idx },
+                        op.location,
+                    )?;
+                    let value_ty = op.result_types[1].clone();
+                    insert_definition(
+                        &mut definitions,
+                        op.results[1].as_str(),
+                        value_ty,
+                        DefinitionOrigin::Op { block: block_idx },
+                        op.location,
+                    )?;
+                }
+                OperationKind::Store => {
+                    if op.operands.len() != 3 {
+                        return Err(VerifyError::new(
+                            "air.store expects memory, pointer, and value operands",
+                        ));
+                    }
+                    let mem_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[0],
+                        &mut uses,
+                    )?;
+                    if mem_ty.as_str() != "!air.mem" {
+                        return Err(VerifyError::new(format!(
+                            "air.store first operand must be !air.mem, found {}",
+                            mem_ty.as_str()
+                        )));
+                    }
+                    let ptr_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[1],
+                        &mut uses,
+                    )?;
+                    if !is_pointer_type(&ptr_ty) {
+                        return Err(VerifyError::new(format!(
+                            "air.store pointer operand must be pointer type, found {}",
+                            ptr_ty.as_str()
+                        )));
+                    }
+                    let value_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[2],
+                        &mut uses,
+                    )?;
+                    if op.results.len() != 1 || op.result_types.len() != 1 {
+                        return Err(VerifyError::new(
+                            "air.store must return updated memory resource",
+                        ));
+                    }
+                    let new_mem_ty = op.result_types[0].clone();
+                    if new_mem_ty != mem_ty {
+                        return Err(VerifyError::new(format!(
+                            "air.store must return memory of type {}, found {}",
+                            mem_ty.as_str(),
+                            new_mem_ty.as_str()
+                        )));
+                    }
+                    insert_definition(
+                        &mut definitions,
+                        op.results[0].as_str(),
+                        new_mem_ty,
+                        DefinitionOrigin::Op { block: block_idx },
+                        op.location,
+                    )?;
+                    // For now we simply ensure the value was type-checked; more precise
+                    // element-type validation will come with richer pointer typing.
+                    let _ = value_ty;
+                }
                 OperationKind::Return => {
+                    if !op.results.is_empty() {
+                        return Err(VerifyError::new("return must not declare result values"));
+                    }
+                    if op.result_types.len() > 1 {
+                        return Err(VerifyError::new(
+                            "return may have at most one explicit type annotation",
+                        ));
+                    }
                     let expected = func.result.as_ref();
+                    if let Some(annotation) = op.result_types.first() {
+                        match expected {
+                            Some(expected_ty) => {
+                                if annotation != expected_ty {
+                                    return Err(VerifyError::new(format!(
+                                        "return annotation mismatch: expected {}, found {}",
+                                        expected_ty.as_str(),
+                                        annotation.as_str()
+                                    )));
+                                }
+                            }
+                            None => {
+                                return Err(VerifyError::new(
+                                    "void function return cannot have type annotation",
+                                ));
+                            }
+                        }
+                    }
                     match (expected, op.operands.first()) {
                         (Some(expected_ty), Some(value)) => {
                             let operand_ty = check_operand(
@@ -521,15 +749,13 @@ fn check_resource_linearity(
         if use_count == 0 {
             return Err(VerifyError::new(format!(
                 "resource value %{} (defined at offset {}) is never used",
-                name,
-                def.location.offset
+                name, def.location.offset
             )));
         }
         if use_count > 1 {
             return Err(VerifyError::new(format!(
                 "resource value %{} (defined at offset {}) used more than once",
-                name,
-                def.location.offset
+                name, def.location.offset
             )));
         }
     }
@@ -559,6 +785,10 @@ fn is_resource_type(ty: &Type) -> bool {
         .any(|prefix| repr.starts_with(prefix))
 }
 
+fn is_pointer_type(ty: &Type) -> bool {
+    ty.as_str().starts_with("!air.ptr<") || ty.as_str() == "!air.ptr"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,24 +810,24 @@ mod tests {
         );
         let mut block = Block::new(Some("entry".into()), loc());
         block.add_op(Operation {
-            result: Some(ValueId::new("one")),
+            results: vec![ValueId::new("one")],
             kind: OperationKind::ConstI64(1),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         block.add_op(Operation {
-            result: Some(ValueId::new("sum")),
+            results: vec![ValueId::new("sum")],
             kind: OperationKind::Add,
             operands: vec![ValueId::new("one"), ValueId::new("one")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("sum")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         func.add_block(block);
@@ -623,10 +853,10 @@ mod tests {
         );
         let mut block = Block::new(Some("entry".into()), loc());
         block.add_op(Operation {
-            result: Some(ValueId::new("sum")),
+            results: vec![ValueId::new("sum")],
             kind: OperationKind::Add,
             operands: vec![ValueId::new("missing"), ValueId::new("missing")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         func.add_block(block);
@@ -647,19 +877,19 @@ mod tests {
 
         let mut entry = Block::new(Some("entry".into()), loc());
         entry.add_op(Operation {
-            result: Some(ValueId::new("x")),
+            results: vec![ValueId::new("x")],
             kind: OperationKind::ConstI64(1),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         entry.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Branch {
                 target: air_ir::BlockTarget::new("then".into(), vec![ValueId::new("x")]),
             },
             operands: Vec::new(),
-            result_type: None,
+            result_types: Vec::new(),
             location: loc(),
         });
 
@@ -670,10 +900,10 @@ mod tests {
             location: loc(),
         });
         then_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("y")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
 
@@ -695,12 +925,12 @@ mod tests {
 
         let mut entry = Block::new(Some("entry".into()), loc());
         entry.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Branch {
                 target: air_ir::BlockTarget::new("then".into(), vec![]),
             },
             operands: Vec::new(),
-            result_type: None,
+            result_types: Vec::new(),
             location: loc(),
         });
 
@@ -711,10 +941,10 @@ mod tests {
             location: loc(),
         });
         then_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("y")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
 
@@ -744,10 +974,10 @@ mod tests {
         );
         let mut entry = Block::new(Some("entry".into()), loc());
         entry.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("mem")],
-            result_type: Some(Type::new("!air.mem")),
+            result_types: vec![Type::new("!air.mem")],
             location: loc(),
         });
         func.add_block(entry);
@@ -770,29 +1000,29 @@ mod tests {
         );
         let mut entry = Block::new(Some("entry".into()), loc());
         entry.add_op(Operation {
-            result: Some(ValueId::new("zero")),
+            results: vec![ValueId::new("zero")],
             kind: OperationKind::ConstI64(0),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         entry.add_op(Operation {
-            result: Some(ValueId::new("always_true")),
+            results: vec![ValueId::new("always_true")],
             kind: OperationKind::ICmp {
                 predicate: IcmpPredicate::Eq,
             },
             operands: vec![ValueId::new("zero"), ValueId::new("zero")],
-            result_type: Some(Type::new("i1")),
+            result_types: vec![Type::new("i1")],
             location: loc(),
         });
         entry.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::CondBranch {
                 true_target: air_ir::BlockTarget::new("then".into(), vec![ValueId::new("mem")]),
                 false_target: air_ir::BlockTarget::new("else".into(), vec![ValueId::new("mem")]),
             },
             operands: vec![ValueId::new("always_true")],
-            result_type: None,
+            result_types: Vec::new(),
             location: loc(),
         });
         let mut then_block = Block::new(Some("then".into()), loc());
@@ -802,10 +1032,10 @@ mod tests {
             location: loc(),
         });
         then_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("m1")],
-            result_type: Some(Type::new("!air.mem")),
+            result_types: vec![Type::new("!air.mem")],
             location: loc(),
         });
         let mut else_block = Block::new(Some("else".into()), loc());
@@ -815,10 +1045,10 @@ mod tests {
             location: loc(),
         });
         else_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("m2")],
-            result_type: Some(Type::new("!air.mem")),
+            result_types: vec![Type::new("!air.mem")],
             location: loc(),
         });
         func.add_block(entry);
@@ -828,6 +1058,179 @@ mod tests {
         let err = verify_module(&module).expect_err("resource should not be duplicated");
         assert!(
             err.message.contains("used more than once"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn memory_ops_verify() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("main"),
+            vec![
+                Argument {
+                    name: ValueId::new("mem"),
+                    ty: Type::new("!air.mem"),
+                    location: loc(),
+                },
+                Argument {
+                    name: ValueId::new("size"),
+                    ty: Type::new("index"),
+                    location: loc(),
+                },
+            ],
+            Some(Type::new("!air.mem")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("init")],
+            kind: OperationKind::ConstI64(42),
+            operands: Vec::new(),
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("mem1"), ValueId::new("ptr")],
+            kind: OperationKind::Alloc,
+            operands: vec![ValueId::new("mem"), ValueId::new("size")],
+            result_types: vec![Type::new("!air.mem"), Type::new("!air.ptr<i64>")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("mem2")],
+            kind: OperationKind::Store,
+            operands: vec![
+                ValueId::new("mem1"),
+                ValueId::new("ptr"),
+                ValueId::new("init"),
+            ],
+            result_types: vec![Type::new("!air.mem")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("mem3"), ValueId::new("loaded")],
+            kind: OperationKind::Load,
+            operands: vec![ValueId::new("mem2"), ValueId::new("ptr")],
+            result_types: vec![Type::new("!air.mem"), Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("mem3")],
+            result_types: vec![Type::new("!air.mem")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        verify_module(&module).expect("memory ops verify");
+    }
+
+    #[test]
+    fn alloc_requires_pointer_result_type() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("main"),
+            vec![
+                Argument {
+                    name: ValueId::new("mem"),
+                    ty: Type::new("!air.mem"),
+                    location: loc(),
+                },
+                Argument {
+                    name: ValueId::new("size"),
+                    ty: Type::new("index"),
+                    location: loc(),
+                },
+            ],
+            Some(Type::new("!air.mem")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("mem1"), ValueId::new("not_ptr")],
+            kind: OperationKind::Alloc,
+            operands: vec![ValueId::new("mem"), ValueId::new("size")],
+            result_types: vec![Type::new("!air.mem"), Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("mem1")],
+            result_types: vec![Type::new("!air.mem")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        let err = verify_module(&module).expect_err("alloc should reject non-pointer result");
+        assert!(
+            err.message.contains("second result must be pointer type"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn store_must_return_memory() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("main"),
+            vec![
+                Argument {
+                    name: ValueId::new("mem"),
+                    ty: Type::new("!air.mem"),
+                    location: loc(),
+                },
+                Argument {
+                    name: ValueId::new("size"),
+                    ty: Type::new("index"),
+                    location: loc(),
+                },
+            ],
+            Some(Type::new("!air.mem")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("val")],
+            kind: OperationKind::ConstI64(0),
+            operands: Vec::new(),
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("mem1"), ValueId::new("ptr")],
+            kind: OperationKind::Alloc,
+            operands: vec![ValueId::new("mem"), ValueId::new("size")],
+            result_types: vec![Type::new("!air.mem"), Type::new("!air.ptr<i8>")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("mem2")],
+            kind: OperationKind::Store,
+            operands: vec![
+                ValueId::new("mem1"),
+                ValueId::new("ptr"),
+                ValueId::new("val"),
+            ],
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("mem2")],
+            result_types: vec![Type::new("!air.mem")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        let err = verify_module(&module).expect_err("store must return memory resource");
+        assert!(
+            err.message.contains("must return memory of type"),
             "unexpected error: {}",
             err
         );
@@ -845,38 +1248,38 @@ mod tests {
 
         let mut entry = Block::new(Some("entry".into()), loc());
         entry.add_op(Operation {
-            result: Some(ValueId::new("cond_value")),
+            results: vec![ValueId::new("cond_value")],
             kind: OperationKind::ConstI64(1),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         entry.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::CondBranch {
                 true_target: air_ir::BlockTarget::new("then".into(), vec![]),
                 false_target: air_ir::BlockTarget::new("else".into(), vec![]),
             },
             operands: vec![ValueId::new("cond_value")],
-            result_type: None,
+            result_types: Vec::new(),
             location: loc(),
         });
 
         let mut then_block = Block::new(Some("then".into()), loc());
         then_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("cond_value")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
 
         let mut else_block = Block::new(Some("else".into()), loc());
         else_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("cond_value")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
 

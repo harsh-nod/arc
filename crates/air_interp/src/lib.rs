@@ -64,8 +64,8 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
             match &op.kind {
                 OperationKind::ConstI64(value) => {
                     let result = op
-                        .result
-                        .as_ref()
+                        .results
+                        .get(0)
                         .ok_or_else(|| InterpreterError::new("const missing result"))?;
                     values.insert(result.as_str().to_string(), *value);
                 }
@@ -73,8 +73,8 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                     let lhs = read_value(&values, &op.operands[0])?;
                     let rhs = read_value(&values, &op.operands[1])?;
                     let result = op
-                        .result
-                        .as_ref()
+                        .results
+                        .get(0)
                         .ok_or_else(|| InterpreterError::new("add missing result"))?;
                     values.insert(result.as_str().to_string(), lhs + rhs);
                 }
@@ -82,8 +82,8 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                     let lhs = read_value(&values, &op.operands[0])?;
                     let rhs = read_value(&values, &op.operands[1])?;
                     let result = op
-                        .result
-                        .as_ref()
+                        .results
+                        .get(0)
                         .ok_or_else(|| InterpreterError::new("sub missing result"))?;
                     values.insert(result.as_str().to_string(), lhs - rhs);
                 }
@@ -91,8 +91,8 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                     let lhs = read_value(&values, &op.operands[0])?;
                     let rhs = read_value(&values, &op.operands[1])?;
                     let result = op
-                        .result
-                        .as_ref()
+                        .results
+                        .get(0)
                         .ok_or_else(|| InterpreterError::new("mul missing result"))?;
                     values.insert(result.as_str().to_string(), lhs * rhs);
                 }
@@ -103,8 +103,8 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                         return Err(InterpreterError::new("division by zero"));
                     }
                     let result = op
-                        .result
-                        .as_ref()
+                        .results
+                        .get(0)
                         .ok_or_else(|| InterpreterError::new("div missing result"))?;
                     values.insert(result.as_str().to_string(), lhs / rhs);
                 }
@@ -112,8 +112,8 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                     let lhs = read_value(&values, &op.operands[0])?;
                     let rhs = read_value(&values, &op.operands[1])?;
                     let result = op
-                        .result
-                        .as_ref()
+                        .results
+                        .get(0)
                         .ok_or_else(|| InterpreterError::new("icmp missing result"))?;
                     let value = match predicate {
                         air_ir::IcmpPredicate::Eq => (lhs == rhs) as i64,
@@ -147,6 +147,11 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                     incoming_args = args;
                     advanced_control_flow = true;
                     break;
+                }
+                OperationKind::Alloc | OperationKind::Load | OperationKind::Store => {
+                    return Err(InterpreterError::new(
+                        "memory operations are not supported by the interpreter yet",
+                    ));
                 }
                 OperationKind::Return => {
                     if let Some(value) = op.operands.first() {
@@ -220,68 +225,68 @@ mod tests {
 
         let mut entry = Block::new(Some("entry".into()), loc());
         entry.add_op(Operation {
-            result: Some(ValueId::new("zero")),
+            results: vec![ValueId::new("zero")],
             kind: OperationKind::ConstI64(0),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         entry.add_op(Operation {
-            result: Some(ValueId::new("one")),
+            results: vec![ValueId::new("one")],
             kind: OperationKind::ConstI64(1),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         entry.add_op(Operation {
-            result: Some(ValueId::new("cond")),
+            results: vec![ValueId::new("cond")],
             kind: OperationKind::ICmp {
                 predicate: IcmpPredicate::Eq,
             },
             operands: vec![ValueId::new("zero"), ValueId::new("one")],
-            result_type: Some(Type::new("i1")),
+            result_types: vec![Type::new("i1")],
             location: loc(),
         });
         entry.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::CondBranch {
                 true_target: BlockTarget::new("then".into(), vec![]),
                 false_target: BlockTarget::new("else".into(), vec![]),
             },
             operands: vec![ValueId::new("cond")],
-            result_type: None,
+            result_types: Vec::new(),
             location: loc(),
         });
 
         let mut then_block = Block::new(Some("then".into()), loc());
         then_block.add_op(Operation {
-            result: Some(ValueId::new("value")),
+            results: vec![ValueId::new("value")],
             kind: OperationKind::ConstI64(1),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         then_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("value")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
 
         let mut else_block = Block::new(Some("else".into()), loc());
         else_block.add_op(Operation {
-            result: Some(ValueId::new("value2")),
+            results: vec![ValueId::new("value2")],
             kind: OperationKind::ConstI64(2),
             operands: Vec::new(),
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
         else_block.add_op(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("value2")],
-            result_type: Some(Type::new("i64")),
+            result_types: vec![Type::new("i64")],
             location: loc(),
         });
 

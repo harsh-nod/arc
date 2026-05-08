@@ -173,29 +173,36 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
     if trimmed.is_empty() {
         return Err(ParseError::new("expected operation", line.location()));
     }
-    if trimmed.starts_with('%') {
-        let (lhs, rhs) = trimmed
-            .split_once('=')
-            .ok_or_else(|| ParseError::new("expected '=' in assignment", line.location()))?;
-        let result_name = lhs.trim().trim_start_matches('%').to_string();
-        let rhs = rhs.trim();
-        if let Some(rest) = rhs.strip_prefix("air.const") {
-            return parse_const(&result_name, rest, line);
+    let loc = line.location();
+    if let Some((lhs, rhs)) = trimmed.split_once('=') {
+        let results = parse_result_list(lhs, loc)?;
+        let rhs_trimmed = rhs.trim();
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.const") {
+            return parse_const(results, rest, line);
         }
-        if let Some(rest) = rhs.strip_prefix("air.add") {
-            return parse_binary_numeric(&result_name, rest, line, OperationKind::Add);
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.add") {
+            return parse_binary_numeric(results, rest, line, OperationKind::Add);
         }
-        if let Some(rest) = rhs.strip_prefix("air.sub") {
-            return parse_binary_numeric(&result_name, rest, line, OperationKind::Sub);
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.sub") {
+            return parse_binary_numeric(results, rest, line, OperationKind::Sub);
         }
-        if let Some(rest) = rhs.strip_prefix("air.mul") {
-            return parse_binary_numeric(&result_name, rest, line, OperationKind::Mul);
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.mul") {
+            return parse_binary_numeric(results, rest, line, OperationKind::Mul);
         }
-        if let Some(rest) = rhs.strip_prefix("air.div") {
-            return parse_binary_numeric(&result_name, rest, line, OperationKind::Div);
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.div") {
+            return parse_binary_numeric(results, rest, line, OperationKind::Div);
         }
-        if let Some(rest) = rhs.strip_prefix("air.icmp") {
-            return parse_icmp(&result_name, rest, line);
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.icmp") {
+            return parse_icmp(results, rest, line);
+        }
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.alloc") {
+            return parse_alloc(results, rest, line);
+        }
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.load") {
+            return parse_load(results, rest, line);
+        }
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.store") {
+            return parse_store(results, rest, line);
         }
         return Err(ParseError::new(
             "unsupported operation on assignment RHS",
@@ -206,10 +213,10 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
         let rest = trimmed.trim_start_matches("air.return").trim();
         if rest.is_empty() {
             return Ok(Operation {
-                result: None,
+                results: Vec::new(),
                 kind: OperationKind::Return,
                 operands: Vec::new(),
-                result_type: None,
+                result_types: Vec::new(),
                 location: line.location(),
             });
         }
@@ -224,12 +231,15 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
             ));
         }
         let operand = ValueId::new(value_part.trim_start_matches('%'));
-        let ty = ty_part_opt.map(Type::new);
+        let mut result_types = Vec::new();
+        if let Some(ty_str) = ty_part_opt {
+            result_types.push(Type::new(ty_str));
+        }
         return Ok(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![operand],
-            result_type: ty,
+            result_types,
             location: line.location(),
         });
     }
@@ -237,10 +247,10 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
         let rest = trimmed.trim_start_matches("air.br").trim();
         let target = parse_block_target(rest, line.location())?;
         return Ok(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::Branch { target },
             operands: Vec::new(),
-            result_type: None,
+            result_types: Vec::new(),
             location: line.location(),
         });
     }
@@ -257,13 +267,13 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
         let true_target = parse_block_target(parts[1].trim(), line.location())?;
         let false_target = parse_block_target(parts[2].trim(), line.location())?;
         return Ok(Operation {
-            result: None,
+            results: Vec::new(),
             kind: OperationKind::CondBranch {
                 true_target,
                 false_target,
             },
             operands: vec![cond],
-            result_type: None,
+            result_types: Vec::new(),
             location: line.location(),
         });
     }
@@ -345,7 +355,13 @@ fn parse_argument_list(list_str: &str, loc: Location) -> Result<Vec<Argument>, P
     Ok(args)
 }
 
-fn parse_const(result_name: &str, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+fn parse_const(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+    if results.len() != 1 {
+        return Err(ParseError::new(
+            "air.const must produce exactly one result",
+            line.location(),
+        ));
+    }
     let trimmed = rest.trim();
     let (value_str, ty_str) = trimmed
         .split_once(':')
@@ -356,20 +372,26 @@ fn parse_const(result_name: &str, rest: &str, line: &Line) -> Result<Operation, 
         .map_err(|_| ParseError::new("const literal must be integer", line.location()))?;
     let ty = parse_type_token(ty_str, line.location())?;
     Ok(Operation {
-        result: Some(ValueId::new(result_name)),
+        results,
         kind: OperationKind::ConstI64(value),
         operands: Vec::new(),
-        result_type: Some(ty),
+        result_types: vec![ty],
         location: line.location(),
     })
 }
 
 fn parse_binary_numeric(
-    result_name: &str,
+    results: Vec<ValueId>,
     rest: &str,
     line: &Line,
     kind: OperationKind,
 ) -> Result<Operation, ParseError> {
+    if results.len() != 1 {
+        return Err(ParseError::new(
+            "binary operation must produce exactly one result",
+            line.location(),
+        ));
+    }
     let trimmed = rest.trim();
     let (operands_part, ty_part) = trimmed
         .split_once(':')
@@ -383,15 +405,21 @@ fn parse_binary_numeric(
     }
     let ty = parse_type_token(ty_part, line.location())?;
     Ok(Operation {
-        result: Some(ValueId::new(result_name)),
+        results,
         kind,
         operands,
-        result_type: Some(ty),
+        result_types: vec![ty],
         location: line.location(),
     })
 }
 
-fn parse_icmp(result_name: &str, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+fn parse_icmp(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+    if results.len() != 1 {
+        return Err(ParseError::new(
+            "air.icmp must produce exactly one result",
+            line.location(),
+        ));
+    }
     let trimmed = rest.trim();
     let (predicate_token, remainder) = split_first_token(trimmed)
         .ok_or_else(|| ParseError::new("icmp requires predicate and operands", line.location()))?;
@@ -414,12 +442,150 @@ fn parse_icmp(result_name: &str, rest: &str, line: &Line) -> Result<Operation, P
     }
     let ty = parse_type_token(ty_part, line.location())?;
     Ok(Operation {
-        result: Some(ValueId::new(result_name)),
+        results,
         kind: OperationKind::ICmp { predicate },
         operands,
-        result_type: Some(ty),
+        result_types: vec![ty],
         location: line.location(),
     })
+}
+
+fn parse_alloc(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+    if results.len() != 2 {
+        return Err(ParseError::new(
+            "air.alloc must produce updated memory and pointer results",
+            line.location(),
+        ));
+    }
+    let trimmed = rest.trim();
+    let (operands_part, type_part) = trimmed.split_once(':').ok_or_else(|| {
+        ParseError::new(
+            "air.alloc requires type annotation after ':'",
+            line.location(),
+        )
+    })?;
+    let operands = parse_value_list(operands_part, line.location())?;
+    let result_types = parse_result_types(type_part, line.location())?;
+    Ok(Operation {
+        results,
+        kind: OperationKind::Alloc,
+        operands,
+        result_types,
+        location: line.location(),
+    })
+}
+
+fn parse_load(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+    if results.len() != 2 {
+        return Err(ParseError::new(
+            "air.load must produce updated memory and loaded value results",
+            line.location(),
+        ));
+    }
+    let trimmed = rest.trim();
+    let (operands_part, type_part) = trimmed.split_once(':').ok_or_else(|| {
+        ParseError::new(
+            "air.load requires type annotation after ':'",
+            line.location(),
+        )
+    })?;
+    let operands = parse_value_list(operands_part, line.location())?;
+    let result_types = parse_result_types(type_part, line.location())?;
+    Ok(Operation {
+        results,
+        kind: OperationKind::Load,
+        operands,
+        result_types,
+        location: line.location(),
+    })
+}
+
+fn parse_store(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+    if results.len() != 1 {
+        return Err(ParseError::new(
+            "air.store must produce exactly one memory result",
+            line.location(),
+        ));
+    }
+    let trimmed = rest.trim();
+    let (operands_part, type_part) = trimmed.split_once(':').ok_or_else(|| {
+        ParseError::new(
+            "air.store requires type annotation after ':'",
+            line.location(),
+        )
+    })?;
+    let operands = parse_value_list(operands_part, line.location())?;
+    let result_types = parse_result_types(type_part, line.location())?;
+    Ok(Operation {
+        results,
+        kind: OperationKind::Store,
+        operands,
+        result_types,
+        location: line.location(),
+    })
+}
+
+fn parse_result_list(lhs: &str, loc: Location) -> Result<Vec<ValueId>, ParseError> {
+    let mut results = Vec::new();
+    for segment in lhs.split(',') {
+        let trimmed = segment.trim();
+        if trimmed.is_empty() {
+            return Err(ParseError::new(
+                "result list cannot contain empty names",
+                loc,
+            ));
+        }
+        if !trimmed.starts_with('%') {
+            return Err(ParseError::new("result must begin with '%'", loc));
+        }
+        let name = trimmed.trim_start_matches('%').trim();
+        if name.is_empty() {
+            return Err(ParseError::new("result name cannot be empty", loc));
+        }
+        results.push(ValueId::new(name));
+    }
+    if results.is_empty() {
+        return Err(ParseError::new(
+            "assignment must include at least one result name",
+            loc,
+        ));
+    }
+    Ok(results)
+}
+
+fn parse_result_types(text: &str, loc: Location) -> Result<Vec<Type>, ParseError> {
+    let trimmed = text.trim();
+    let (_, outputs_str) = trimmed
+        .split_once("->")
+        .ok_or_else(|| ParseError::new("type annotation must include '->' for results", loc))?;
+    parse_type_group(outputs_str, loc)
+}
+
+fn parse_type_group(text: &str, loc: Location) -> Result<Vec<Type>, ParseError> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    if trimmed.starts_with('(') {
+        if !trimmed.ends_with(')') {
+            return Err(ParseError::new("type list must end with ')'", loc));
+        }
+        let inner = &trimmed[1..trimmed.len() - 1];
+        let inner_trimmed = inner.trim();
+        if inner_trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut types = Vec::new();
+        for segment in split_top_level(inner_trimmed, ',') {
+            if segment.trim().is_empty() {
+                return Err(ParseError::new("empty type in list", loc));
+            }
+            types.push(parse_type_token(segment.as_str(), loc)?);
+        }
+        Ok(types)
+    } else {
+        Ok(vec![parse_type_token(trimmed, loc)?])
+    }
 }
 
 fn parse_block_target(segment: &str, loc: Location) -> Result<BlockTarget, ParseError> {
