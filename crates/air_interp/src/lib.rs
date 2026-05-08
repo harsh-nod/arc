@@ -148,9 +148,13 @@ pub fn run_main(module: &Module) -> Result<Option<i64>, InterpreterError> {
                     advanced_control_flow = true;
                     break;
                 }
-                OperationKind::Alloc | OperationKind::Load | OperationKind::Store => {
+                OperationKind::Alloc
+                | OperationKind::Load
+                | OperationKind::Store
+                | OperationKind::Assume
+                | OperationKind::Assert => {
                     return Err(InterpreterError::new(
-                        "memory operations are not supported by the interpreter yet",
+                        "memory/proof operations are not supported by the interpreter yet",
                     ));
                 }
                 OperationKind::Return => {

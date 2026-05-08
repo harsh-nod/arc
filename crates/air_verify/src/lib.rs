@@ -503,6 +503,84 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                     // element-type validation will come with richer pointer typing.
                     let _ = value_ty;
                 }
+                OperationKind::Assume => {
+                    if op.operands.len() != 1 {
+                        return Err(VerifyError::new(
+                            "air.assume expects exactly one condition operand",
+                        ));
+                    }
+                    let cond_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[0],
+                        &mut uses,
+                    )?;
+                    if cond_ty != Type::new("i1") {
+                        return Err(VerifyError::new(format!(
+                            "air.assume condition must have type i1, found {}",
+                            cond_ty.as_str()
+                        )));
+                    }
+                    if op.results.len() != 1 || op.result_types.len() != 1 {
+                        return Err(VerifyError::new(
+                            "air.assume must produce exactly one proof result",
+                        ));
+                    }
+                    validate_type_list(&op.result_types, &index_params)?;
+                    let proof_ty = op.result_types[0].clone();
+                    if !is_proof_type(&proof_ty) {
+                        return Err(VerifyError::new(format!(
+                            "air.assume result must be proof type, found {}",
+                            proof_ty.as_str()
+                        )));
+                    }
+                    insert_definition(
+                        &mut definitions,
+                        op.results[0].as_str(),
+                        proof_ty,
+                        DefinitionOrigin::Op { block: block_idx },
+                        op.location,
+                    )?;
+                }
+                OperationKind::Assert => {
+                    if !op.results.is_empty() {
+                        return Err(VerifyError::new("air.assert does not produce results"));
+                    }
+                    if op.operands.len() != 1 {
+                        return Err(VerifyError::new(
+                            "air.assert expects exactly one condition operand",
+                        ));
+                    }
+                    let cond_ty = check_operand(
+                        &definitions,
+                        &dominators,
+                        block_idx,
+                        &op.operands[0],
+                        &mut uses,
+                    )?;
+                    if cond_ty != Type::new("i1") {
+                        return Err(VerifyError::new(format!(
+                            "air.assert condition must have type i1, found {}",
+                            cond_ty.as_str()
+                        )));
+                    }
+                    if op.result_types.len() > 1 {
+                        return Err(VerifyError::new(
+                            "air.assert may have at most one type annotation",
+                        ));
+                    }
+                    validate_type_list(&op.result_types, &index_params)?;
+                    if let Some(annotation) = op.result_types.first() {
+                        if annotation != &cond_ty {
+                            return Err(VerifyError::new(format!(
+                                "air.assert annotation must match operand type (expected {}, found {})",
+                                cond_ty.as_str(),
+                                annotation.as_str()
+                            )));
+                        }
+                    }
+                }
                 OperationKind::Return => {
                     if !op.result_types.is_empty() {
                         validate_type_list(&op.result_types, &index_params)?;
@@ -812,6 +890,11 @@ fn is_resource_type(ty: &Type) -> bool {
 
 fn is_pointer_type(ty: &Type) -> bool {
     ty.as_str().starts_with("!air.ptr<") || ty.as_str() == "!air.ptr"
+}
+
+fn is_proof_type(ty: &Type) -> bool {
+    let repr = ty.as_str();
+    repr.starts_with("!air.proof<") || repr == "!air.proof"
 }
 
 fn validate_type_list(types: &[Type], index_params: &HashSet<String>) -> Result<(), VerifyError> {
@@ -1351,6 +1434,29 @@ mod tests {
             location: loc(),
         });
         entry.add_op(Operation {
+            results: vec![ValueId::new("zero")],
+            kind: OperationKind::ConstI64(0),
+            operands: Vec::new(),
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("positive")],
+            kind: OperationKind::ICmp {
+                predicate: IcmpPredicate::Sgt,
+            },
+            operands: vec![ValueId::new("len"), ValueId::new("zero")],
+            result_types: vec![Type::new("i1")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: vec![ValueId::new("pf")],
+            kind: OperationKind::Assume,
+            operands: vec![ValueId::new("positive")],
+            result_types: vec![Type::new("!air.proof<%n > 0>")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
             results: Vec::new(),
             kind: OperationKind::Return,
             operands: vec![ValueId::new("len")],
@@ -1396,6 +1502,85 @@ mod tests {
         let err = verify_module(&module).expect_err("missing index parameter should fail");
         assert!(
             err.message.contains("undefined index"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn assume_requires_proof_result() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("main"),
+            Vec::new(),
+            vec![Argument {
+                name: ValueId::new("cond"),
+                ty: Type::new("i1"),
+                location: loc(),
+            }],
+            Some(Type::new("i64")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("pf")],
+            kind: OperationKind::Assume,
+            operands: vec![ValueId::new("cond")],
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("cond")],
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        let err = verify_module(&module).expect_err("assume should require proof type");
+        assert!(
+            err.message.contains("result must be proof type"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn assert_requires_boolean_condition() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("main"),
+            Vec::new(),
+            vec![Argument {
+                name: ValueId::new("value"),
+                ty: Type::new("i64"),
+                location: loc(),
+            }],
+            Some(Type::new("i64")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Assert,
+            operands: vec![ValueId::new("value")],
+            result_types: Vec::new(),
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("value")],
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        let err = verify_module(&module).expect_err("assert should require boolean condition");
+        assert!(
+            err.message
+                .contains("air.assert condition must have type i1"),
             "unexpected error: {}",
             err
         );

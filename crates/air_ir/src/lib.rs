@@ -245,6 +245,8 @@ pub enum OperationKind {
     Alloc,
     Load,
     Store,
+    Assume,
+    Assert,
     Branch {
         target: BlockTarget,
     },

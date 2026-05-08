@@ -213,6 +213,9 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
         if let Some(rest) = rhs_trimmed.strip_prefix("air.store") {
             return parse_store(results, rest, line);
         }
+        if let Some(rest) = rhs_trimmed.strip_prefix("air.assume") {
+            return parse_assume(results, rest, line);
+        }
         return Err(ParseError::new(
             "unsupported operation on assignment RHS",
             line.location(),
@@ -285,6 +288,10 @@ fn parse_operation(line: &Line) -> Result<Operation, ParseError> {
             result_types: Vec::new(),
             location: line.location(),
         });
+    }
+    if trimmed.starts_with("air.assert") {
+        let rest = trimmed.trim_start_matches("air.assert").trim();
+        return parse_assert(rest, line);
     }
     Err(ParseError::new("unsupported operation", line.location()))
 }
@@ -566,6 +573,63 @@ fn parse_store(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operati
         results,
         kind: OperationKind::Store,
         operands,
+        result_types,
+        location: line.location(),
+    })
+}
+
+fn parse_assume(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
+    if results.len() != 1 {
+        return Err(ParseError::new(
+            "air.assume must produce exactly one result",
+            line.location(),
+        ));
+    }
+    let trimmed = rest.trim();
+    let (operand_part, ty_part) = trimmed.split_once(':').ok_or_else(|| {
+        ParseError::new(
+            "air.assume requires result type annotation",
+            line.location(),
+        )
+    })?;
+    let operands = parse_value_list(operand_part, line.location())?;
+    if operands.len() != 1 {
+        return Err(ParseError::new(
+            "air.assume expects exactly one operand",
+            line.location(),
+        ));
+    }
+    let proof_ty = parse_type_token(ty_part, line.location())?;
+    Ok(Operation {
+        results,
+        kind: OperationKind::Assume,
+        operands,
+        result_types: vec![proof_ty],
+        location: line.location(),
+    })
+}
+
+fn parse_assert(rest: &str, line: &Line) -> Result<Operation, ParseError> {
+    let trimmed = rest.trim();
+    if trimmed.is_empty() {
+        return Err(ParseError::new(
+            "air.assert requires an operand",
+            line.location(),
+        ));
+    }
+    let (operand_part, ty_part_opt) = trimmed
+        .split_once(':')
+        .map(|(lhs, rhs)| (lhs.trim(), Some(rhs.trim())))
+        .unwrap_or_else(|| (trimmed, None));
+    let operand = parse_value_operand(operand_part, line.location())?;
+    let mut result_types = Vec::new();
+    if let Some(ty_str) = ty_part_opt {
+        result_types.push(parse_type_token(ty_str, line.location())?);
+    }
+    Ok(Operation {
+        results: Vec::new(),
+        kind: OperationKind::Assert,
+        operands: vec![operand],
         result_types,
         location: line.location(),
     })
