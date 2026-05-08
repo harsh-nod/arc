@@ -1,0 +1,7 @@
+air.module @bad {
+  air.func @add(%a: i64, %b: i64) {
+  ^entry:
+    %c = air.add %a, %b
+    air.return %c
+  }
+}

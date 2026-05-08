@@ -1,0 +1,8 @@
+air.module @m {
+  air.func @add(%a: i64, %b: i64) -> i64 {
+  ^entry:
+    %c = air.const 1 : i64
+    %d = air.add %a, %b : i64
+    air.return %d : i64
+  }
+}

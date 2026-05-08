@@ -1,0 +1,6 @@
+/target
+**/target
+**/*.swp
+/.idea
+/.vscode
+/Cargo.lock
