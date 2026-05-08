@@ -98,8 +98,15 @@ impl Module {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexParam {
+    pub name: ValueId,
+    pub location: Location,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Function {
     pub name: Symbol,
+    pub index_params: Vec<IndexParam>,
     pub params: Vec<Argument>,
     pub result: Option<Type>,
     pub blocks: Vec<Block>,
@@ -109,12 +116,14 @@ pub struct Function {
 impl Function {
     pub fn new(
         name: Symbol,
+        index_params: Vec<IndexParam>,
         params: Vec<Argument>,
         result: Option<Type>,
         location: Location,
     ) -> Self {
         Self {
             name,
+            index_params,
             params,
             result,
             blocks: Vec::new(),
@@ -143,6 +152,10 @@ impl Function {
 
     pub fn entry_block(&self) -> Option<&Block> {
         self.blocks.first()
+    }
+
+    pub fn add_index_param(&mut self, param: IndexParam) {
+        self.index_params.push(param);
     }
 }
 

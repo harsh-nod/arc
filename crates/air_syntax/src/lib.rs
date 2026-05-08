@@ -81,4 +81,27 @@ air.module @m {
             Some(OperationKind::Return)
         ));
     }
+
+    #[test]
+    fn parse_function_with_forall_indices() {
+        let source = r#"
+air.module @m {
+  air.func @f forall (%n: index, %m: index) (%xs: !air.tensor<f32, [%n, %m]>) -> !air.tensor<f32, [%n, %m]> {
+  ^entry:
+    air.return %xs : !air.tensor<f32, [%n, %m]>
+  }
+}
+"#;
+        let module = parse_module(source).expect("module parses");
+        let func = module.functions.values().next().expect("function present");
+        assert_eq!(func.index_params.len(), 2);
+        assert_eq!(func.index_params[0].name.as_str(), "n");
+        assert_eq!(func.index_params[1].name.as_str(), "m");
+        assert_eq!(func.params.len(), 1);
+        assert_eq!(func.params[0].ty.as_str(), "!air.tensor<f32, [%n, %m]>");
+        assert_eq!(
+            func.result.as_ref().map(|ty| ty.as_str()),
+            Some("!air.tensor<f32, [%n, %m]>")
+        );
+    }
 }

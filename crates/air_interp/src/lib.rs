@@ -219,6 +219,7 @@ mod tests {
         let mut func = Function::new(
             Symbol::new("main"),
             Vec::new(),
+            Vec::new(),
             Some(Type::new("i64")),
             loc(),
         );

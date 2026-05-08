@@ -1,5 +1,5 @@
 use air_ir::{Function, Location, Module, OperationKind, Type, ValueId};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
@@ -47,6 +47,20 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
     }
 
     let block_count = func.blocks.len();
+
+    let mut index_params: HashSet<String> = HashSet::new();
+    for param in &func.index_params {
+        let name = param.name.as_str().to_string();
+        if !index_params.insert(name.clone()) {
+            return Err(VerifyError::new(format!(
+                "duplicate index parameter %{}",
+                name
+            )));
+        }
+    }
+    if let Some(result_ty) = &func.result {
+        validate_type_indices(result_ty, &index_params)?;
+    }
 
     // Collect block labels and ensure uniqueness.
     let mut label_map: HashMap<String, usize> = HashMap::new();
@@ -101,6 +115,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
     let mut definitions: HashMap<String, Definition> = HashMap::new();
     let mut uses: HashMap<String, usize> = HashMap::new();
     for param in &func.params {
+        validate_type_indices(&param.ty, &index_params)?;
         insert_definition(
             &mut definitions,
             param.name.as_str(),
@@ -114,6 +129,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
         let block = &func.blocks[block_idx];
 
         for arg in &block.args {
+            validate_type_indices(&arg.ty, &index_params)?;
             insert_definition(
                 &mut definitions,
                 arg.name.as_str(),
@@ -136,6 +152,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                             "const must produce exactly one result value",
                         ));
                     }
+                    validate_type_list(&op.result_types, &index_params)?;
                     let ty = op.result_types[0].clone();
                     let result = &op.results[0];
                     insert_definition(
@@ -182,6 +199,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                             "binary arithmetic must produce exactly one result value",
                         ));
                     }
+                    validate_type_list(&op.result_types, &index_params)?;
                     let result_ty = op.result_types[0].clone();
                     if result_ty != lhs_ty {
                         return Err(VerifyError::new(
@@ -228,6 +246,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                             "icmp must produce exactly one result value",
                         ));
                     }
+                    validate_type_list(&op.result_types, &index_params)?;
                     let result_ty = op.result_types[0].clone();
                     if result_ty != Type::new("i1") {
                         return Err(VerifyError::new(format!(
@@ -297,6 +316,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                             "air.alloc expects memory and size operands",
                         ));
                     }
+                    validate_type_list(&op.result_types, &index_params)?;
                     let mem_ty = check_operand(
                         &definitions,
                         &dominators,
@@ -363,6 +383,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                             "air.load expects memory and pointer operands",
                         ));
                     }
+                    validate_type_list(&op.result_types, &index_params)?;
                     let mem_ty = check_operand(
                         &definitions,
                         &dominators,
@@ -424,6 +445,7 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                             "air.store expects memory, pointer, and value operands",
                         ));
                     }
+                    validate_type_list(&op.result_types, &index_params)?;
                     let mem_ty = check_operand(
                         &definitions,
                         &dominators,
@@ -482,6 +504,9 @@ fn verify_function(func: &Function) -> Result<(), VerifyError> {
                     let _ = value_ty;
                 }
                 OperationKind::Return => {
+                    if !op.result_types.is_empty() {
+                        validate_type_list(&op.result_types, &index_params)?;
+                    }
                     if !op.results.is_empty() {
                         return Err(VerifyError::new("return must not declare result values"));
                     }
@@ -789,12 +814,67 @@ fn is_pointer_type(ty: &Type) -> bool {
     ty.as_str().starts_with("!air.ptr<") || ty.as_str() == "!air.ptr"
 }
 
+fn validate_type_list(types: &[Type], index_params: &HashSet<String>) -> Result<(), VerifyError> {
+    for ty in types {
+        validate_type_indices(ty, index_params)?;
+    }
+    Ok(())
+}
+
+fn validate_type_indices(ty: &Type, index_params: &HashSet<String>) -> Result<(), VerifyError> {
+    for var in extract_index_vars(ty) {
+        if !index_params.contains(&var) {
+            return Err(VerifyError::new(format!(
+                "type {} references undefined index %{}",
+                ty.as_str(),
+                var
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn extract_index_vars(ty: &Type) -> Vec<String> {
+    let mut vars = Vec::new();
+    let repr = ty.as_str();
+    let mut bytes = repr.as_bytes();
+    let mut offset = 0;
+    while !bytes.is_empty() {
+        if bytes[0] == b'%' {
+            let mut len = 0;
+            for b in &bytes[1..] {
+                if (b'A'..=b'Z').contains(b)
+                    || (b'a'..=b'z').contains(b)
+                    || (b'0'..=b'9').contains(b)
+                    || *b == b'_'
+                {
+                    len += 1;
+                } else {
+                    break;
+                }
+            }
+            if len > 0 {
+                let start = offset + 1;
+                let end = start + len;
+                vars.push(repr[start..end].to_string());
+                let advance = len + 1;
+                bytes = &bytes[advance..];
+                offset += advance;
+                continue;
+            }
+        }
+        bytes = &bytes[1..];
+        offset += 1;
+    }
+    vars
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use air_ir::{
-        Argument, Block, IcmpPredicate, Location, Module, Operation, OperationKind, Symbol, Type,
-        ValueId,
+        Argument, Block, IcmpPredicate, IndexParam, Location, Module, Operation, OperationKind,
+        Symbol, Type, ValueId,
     };
 
     fn loc() -> Location {
@@ -804,6 +884,7 @@ mod tests {
     fn minimal_function() -> Function {
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             Vec::new(),
             Some(Type::new("i64")),
             loc(),
@@ -848,6 +929,7 @@ mod tests {
         let mut func = Function::new(
             Symbol::new("main"),
             Vec::new(),
+            Vec::new(),
             Some(Type::new("i64")),
             loc(),
         );
@@ -870,6 +952,7 @@ mod tests {
         let mut module = Module::new(Symbol::new("m"));
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             Vec::new(),
             Some(Type::new("i64")),
             loc(),
@@ -919,6 +1002,7 @@ mod tests {
         let mut func = Function::new(
             Symbol::new("main"),
             Vec::new(),
+            Vec::new(),
             Some(Type::new("i64")),
             loc(),
         );
@@ -964,6 +1048,7 @@ mod tests {
         let mut module = Module::new(Symbol::new("m"));
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             vec![Argument {
                 name: ValueId::new("mem"),
                 ty: Type::new("!air.mem"),
@@ -990,6 +1075,7 @@ mod tests {
         let mut module = Module::new(Symbol::new("m"));
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             vec![Argument {
                 name: ValueId::new("mem"),
                 ty: Type::new("!air.mem"),
@@ -1068,6 +1154,7 @@ mod tests {
         let mut module = Module::new(Symbol::new("m"));
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             vec![
                 Argument {
                     name: ValueId::new("mem"),
@@ -1133,6 +1220,7 @@ mod tests {
         let mut module = Module::new(Symbol::new("m"));
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             vec![
                 Argument {
                     name: ValueId::new("mem"),
@@ -1178,6 +1266,7 @@ mod tests {
         let mut module = Module::new(Symbol::new("m"));
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             vec![
                 Argument {
                     name: ValueId::new("mem"),
@@ -1237,10 +1326,87 @@ mod tests {
     }
 
     #[test]
+    fn indexed_type_requires_declared_index() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("slice_len"),
+            vec![IndexParam {
+                name: ValueId::new("n"),
+                location: loc(),
+            }],
+            vec![Argument {
+                name: ValueId::new("xs"),
+                ty: Type::new("!air.slice<i32, %n>"),
+                location: loc(),
+            }],
+            Some(Type::new("i64")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("len")],
+            kind: OperationKind::ConstI64(0),
+            operands: Vec::new(),
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("len")],
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        verify_module(&module).expect("declared index should be accepted");
+    }
+
+    #[test]
+    fn missing_index_parameter_is_error() {
+        let mut module = Module::new(Symbol::new("m"));
+        let mut func = Function::new(
+            Symbol::new("slice_len"),
+            Vec::new(),
+            vec![Argument {
+                name: ValueId::new("xs"),
+                ty: Type::new("!air.slice<i32, %n>"),
+                location: loc(),
+            }],
+            Some(Type::new("i64")),
+            loc(),
+        );
+        let mut entry = Block::new(Some("entry".into()), loc());
+        entry.add_op(Operation {
+            results: vec![ValueId::new("len")],
+            kind: OperationKind::ConstI64(0),
+            operands: Vec::new(),
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        entry.add_op(Operation {
+            results: Vec::new(),
+            kind: OperationKind::Return,
+            operands: vec![ValueId::new("len")],
+            result_types: vec![Type::new("i64")],
+            location: loc(),
+        });
+        func.add_block(entry);
+        module.add_function(func).unwrap();
+        let err = verify_module(&module).expect_err("missing index parameter should fail");
+        assert!(
+            err.message.contains("undefined index"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
     fn cond_branch_requires_boolean_condition() {
         let mut module = Module::new(Symbol::new("m"));
         let mut func = Function::new(
             Symbol::new("main"),
+            Vec::new(),
             Vec::new(),
             Some(Type::new("i64")),
             loc(),

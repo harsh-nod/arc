@@ -1,6 +1,6 @@
 use air_ir::{
-    Argument, Block, BlockTarget, Function, IcmpPredicate, Location, Module, ModuleError,
-    Operation, OperationKind, Symbol, Type, ValueId,
+    Argument, Block, BlockTarget, Function, IcmpPredicate, IndexParam, Location, Module,
+    ModuleError, Operation, OperationKind, Symbol, Type, ValueId,
 };
 use std::ops::Range;
 
@@ -98,7 +98,13 @@ fn parse_function(lines: &[Line], start_idx: usize) -> Result<(Function, usize),
     }
 
     let (sig_body, has_brace) = strip_trailing_brace(header_trimmed);
-    let (name, params_str, result_ty) = parse_function_signature(sig_body, header_line.location())?;
+    let signature = parse_function_signature(sig_body, header_line.location())?;
+    let ParsedFunctionSignature {
+        name,
+        index_params,
+        params_part,
+        result_ty,
+    } = signature;
 
     idx += 1;
 
@@ -115,10 +121,13 @@ fn parse_function(lines: &[Line], start_idx: usize) -> Result<(Function, usize),
         idx = brace_idx + 1;
     }
 
+    let function_params = parse_argument_list(params_part, header_line.location())?;
+    let function_result = result_ty.map(Type::new);
     let mut function = Function::new(
         Symbol::new(name),
-        parse_argument_list(params_str, header_line.location())?,
-        result_ty.map(Type::new),
+        index_params,
+        function_params,
+        function_result,
         header_line.location(),
     );
 
@@ -355,6 +364,43 @@ fn parse_argument_list(list_str: &str, loc: Location) -> Result<Vec<Argument>, P
     Ok(args)
 }
 
+fn parse_index_param_list(list_str: &str, loc: Location) -> Result<Vec<IndexParam>, ParseError> {
+    let trimmed = list_str.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut params = Vec::new();
+    for segment in split_top_level(trimmed, ',') {
+        let seg = segment.trim();
+        if seg.is_empty() {
+            return Err(ParseError::new("empty index parameter segment", loc));
+        }
+        let (name_part, ty_part) = seg
+            .split_once(':')
+            .ok_or_else(|| ParseError::new("index parameter must be '%name: index'", loc))?;
+        let name_part = name_part.trim();
+        if !name_part.starts_with('%') {
+            return Err(ParseError::new(
+                "index parameter name must start with '%'",
+                loc,
+            ));
+        }
+        let name = name_part.trim_start_matches('%').trim();
+        if name.is_empty() {
+            return Err(ParseError::new("index parameter name cannot be empty", loc));
+        }
+        let ty_part = ty_part.trim();
+        if ty_part != "index" {
+            return Err(ParseError::new("index parameter type must be 'index'", loc));
+        }
+        params.push(IndexParam {
+            name: ValueId::new(name),
+            location: loc,
+        });
+    }
+    Ok(params)
+}
+
 fn parse_const(results: Vec<ValueId>, rest: &str, line: &Line) -> Result<Operation, ParseError> {
     if results.len() != 1 {
         return Err(ParseError::new(
@@ -553,6 +599,45 @@ fn parse_result_list(lhs: &str, loc: Location) -> Result<Vec<ValueId>, ParseErro
     Ok(results)
 }
 
+fn split_parenthesized<'a>(input: &'a str, _loc: Location) -> Option<(&'a str, &'a str)> {
+    let mut chars = input.char_indices();
+    let mut start_idx = None;
+    let mut depth = 0usize;
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '(' => {
+                if start_idx.is_none() {
+                    start_idx = Some(idx);
+                }
+                depth += 1;
+            }
+            ')' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+                if depth == 0 {
+                    let start = match start_idx {
+                        Some(idx) => idx,
+                        None => return None,
+                    };
+                    let inner = &input[start + 1..idx];
+                    let rest = &input[idx + 1..];
+                    return Some((inner, rest));
+                }
+            }
+            _ => {
+                if start_idx.is_none() && !ch.is_whitespace() && ch != '(' {
+                    if ch != '(' {
+                        // continue scanning until we find '('
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn parse_result_types(text: &str, loc: Location) -> Result<Vec<Type>, ParseError> {
     let trimmed = text.trim();
     let (_, outputs_str) = trimmed
@@ -708,26 +793,62 @@ fn split_top_level(input: &str, delimiter: char) -> Vec<String> {
     parts
 }
 
+struct ParsedFunctionSignature<'a> {
+    name: &'a str,
+    index_params: Vec<IndexParam>,
+    params_part: &'a str,
+    result_ty: Option<&'a str>,
+}
+
 fn parse_function_signature<'a>(
     sig: &'a str,
     loc: Location,
-) -> Result<(&'a str, &'a str, Option<&'a str>), ParseError> {
-    let remainder = sig.trim_start_matches("air.func").trim();
-    let (name_part, rest) = remainder
-        .split_once('(')
-        .ok_or_else(|| ParseError::new("expected '(' in function signature", loc))?;
-    let name = name_part.trim().trim_start_matches('@');
-    let (params_part, after_params) = rest
-        .rsplit_once(')')
-        .ok_or_else(|| ParseError::new("expected ')' in function signature", loc))?;
+) -> Result<ParsedFunctionSignature<'a>, ParseError> {
+    let mut remainder = sig.trim_start_matches("air.func").trim();
+    if !remainder.starts_with('@') {
+        return Err(ParseError::new("function name must start with '@'", loc));
+    }
+    let name_end = remainder
+        .char_indices()
+        .find_map(|(idx, ch)| {
+            if ch == '(' || ch.is_whitespace() {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| remainder.len());
+    let name = remainder[..name_end].trim().trim_start_matches('@');
+    if name.is_empty() {
+        return Err(ParseError::new("function name cannot be empty", loc));
+    }
+    remainder = remainder[name_end..].trim_start();
+
+    let mut index_params = Vec::new();
+    if remainder.starts_with("forall") {
+        remainder = remainder["forall".len()..].trim_start();
+        let (list, rest) = split_parenthesized(remainder, loc)
+            .ok_or_else(|| ParseError::new("expected '(...)' after forall", loc))?;
+        index_params = parse_index_param_list(list, loc)?;
+        remainder = rest.trim_start();
+    }
+
+    let (params_part, after_params) = split_parenthesized(remainder, loc).ok_or_else(|| {
+        ParseError::new("expected parameter list '(...)' in function signature", loc)
+    })?;
     let after_params = after_params.trim();
-    let (result_ty, _) = if let Some(rest) = after_params.strip_prefix("->") {
-        let ty = rest.trim();
-        (Some(ty), "")
+    let result_ty = if let Some(rest) = after_params.strip_prefix("->") {
+        Some(rest.trim())
     } else {
-        (None, after_params)
+        None
     };
-    Ok((name, params_part, result_ty))
+
+    Ok(ParsedFunctionSignature {
+        name,
+        index_params,
+        params_part,
+        result_ty,
+    })
 }
 
 fn parse_module_header(line: &Line) -> Result<(&str, bool), ParseError> {
