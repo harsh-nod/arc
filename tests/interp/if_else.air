@@ -1,0 +1,16 @@
+arc.module @interp_if_else {
+  arc.func @main() -> i64 {
+  ^entry:
+    %one = arc.const 1 : i64
+    %r = arc.if %one {
+    ^then:
+      %a = arc.const 10 : i64
+      arc.yield %a
+    } else {
+    ^else_body:
+      %b = arc.const 20 : i64
+      arc.yield %b
+    }
+    arc.return %r : i64
+  }
+}

@@ -1,0 +1,12 @@
+arc.module @parse_arith {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 10 : i64
+    %b = arc.const 3 : i64
+    %c = arc.add %a, %b : i64
+    %d = arc.sub %c, %b : i64
+    %e = arc.mul %d, %a : i64
+    %f = arc.div %e, %b : i64
+    arc.return %f : i64
+  }
+}

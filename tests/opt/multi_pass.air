@@ -1,0 +1,12 @@
+arc.module @opt_multi {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 2 : i64
+    %b = arc.const 3 : i64
+    %c = arc.add %a, %b : i64
+    %dead = arc.const 999 : i64
+    %d = arc.const 5 : i64
+    %e = arc.add %c, %d : i64
+    arc.return %e : i64
+  }
+}

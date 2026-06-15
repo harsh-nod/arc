@@ -1,0 +1,7 @@
+arc.module @bad_undef {
+  arc.func @main() -> i64 {
+  ^entry:
+    %c = arc.add %x, %y : i64
+    arc.return %c : i64
+  }
+}

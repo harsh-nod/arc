@@ -1,0 +1,12 @@
+arc.module @codegen_arith {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 15 : i64
+    %b = arc.const 7 : i64
+    %sum = arc.add %a, %b : i64
+    %diff = arc.sub %sum, %b : i64
+    %prod = arc.mul %diff, %b : i64
+    %quot = arc.div %prod, %a : i64
+    arc.return %quot : i64
+  }
+}

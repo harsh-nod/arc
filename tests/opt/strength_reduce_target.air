@@ -1,0 +1,9 @@
+arc.module @opt_strength {
+  arc.func @main() -> i64 {
+  ^entry:
+    %x = arc.const 5 : i64
+    %two = arc.const 2 : i64
+    %doubled = arc.mul %x, %two : i64
+    arc.return %doubled : i64
+  }
+}

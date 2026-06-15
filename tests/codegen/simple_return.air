@@ -1,0 +1,7 @@
+arc.module @codegen_ret {
+  arc.func @main() -> i64 {
+  ^entry:
+    %v = arc.const 42 : i64
+    arc.return %v : i64
+  }
+}

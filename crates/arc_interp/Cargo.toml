@@ -1,0 +1,22 @@
+[package]
+name = "arc_interp"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arc_ir = { path = "../arc_ir", version = "0.1.0" }
+arc_verify = { path = "../arc_verify", version = "0.1.0" }
+arc_async = { path = "../arc_async", version = "0.1.0" }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

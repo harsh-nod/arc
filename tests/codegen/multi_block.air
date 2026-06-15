@@ -1,0 +1,11 @@
+arc.module @codegen_multi {
+  arc.func @main() -> i64 {
+  ^entry:
+    %x = arc.const 10 : i64
+    arc.br ^next(%x)
+  ^next(%val: i64):
+    %two = arc.const 2 : i64
+    %r = arc.mul %val, %two : i64
+    arc.return %r : i64
+  }
+}

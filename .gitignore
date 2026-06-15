@@ -3,4 +3,7 @@
 **/*.swp
 /.idea
 /.vscode
-/Cargo.lock
+/.codex
+/.codex/
+examples/*.o
+examples/*.wasm

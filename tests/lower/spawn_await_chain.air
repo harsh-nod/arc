@@ -1,0 +1,17 @@
+arc.module @spawn_chain_test {
+  arc.func @worker() -> i64 {
+  ^entry:
+    %r = arc.const 5 : i64
+    arc.return %r : i64
+  }
+
+  arc.func @main() -> i64 {
+  ^entry:
+    %t1 = arc.spawn @worker()
+    %v1 = arc.await %t1
+    %t2 = arc.spawn @worker()
+    %v2 = arc.await %t2
+    %sum = arc.add %v1, %v2 : i64
+    arc.return %sum : i64
+  }
+}

@@ -1,0 +1,14 @@
+arc.module @parse_branch {
+  arc.func @main() -> i64 {
+  ^entry:
+    %z = arc.const 0 : i64
+    %one = arc.const 1 : i64
+    %cond = arc.icmp eq %z, %z : i1
+    arc.cond_br %cond, ^yes(), ^no()
+  ^yes:
+    arc.return %one : i64
+  ^no:
+    %two = arc.const 2 : i64
+    arc.return %two : i64
+  }
+}

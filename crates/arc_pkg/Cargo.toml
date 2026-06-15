@@ -1,0 +1,20 @@
+[package]
+name = "arc_pkg"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arc_ir = { path = "../arc_ir", version = "0.1.0" }
+arc_syntax = { path = "../arc_syntax", version = "0.1.0" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = "1"

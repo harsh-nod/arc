@@ -1,0 +1,15 @@
+arc.module @codegen_cmp {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 10 : i64
+    %b = arc.const 20 : i64
+    %lt = arc.icmp slt %a, %b : i1
+    arc.cond_br %lt, ^less(), ^geq()
+  ^less:
+    %one = arc.const 1 : i64
+    arc.return %one : i64
+  ^geq:
+    %zero = arc.const 0 : i64
+    arc.return %zero : i64
+  }
+}

@@ -1,0 +1,8 @@
+arc.module @checkpoint_test {
+  arc.func @main() -> i64 {
+  ^entry:
+    %cp = arc.checkpoint "save_point"
+    %r = arc.const 10 : i64
+    arc.return %r : i64
+  }
+}

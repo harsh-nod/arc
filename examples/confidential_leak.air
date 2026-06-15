@@ -1,0 +1,16 @@
+arc.module @confidential_leak_demo {
+  arc.capability @log.write {
+    inputs(%msg: i64)
+    outputs(%ok: i64)
+    effects [#arc.effect<external_communication>]
+    failures []
+  }
+
+  arc.func @main() -> i64 {
+  ^entry:
+    %secret = arc.const 42 : i64
+    %auth = arc.require_approval %secret, %secret : !arc.auth<log.write>
+    %ok = arc.invoke @log.write(%secret)
+    arc.return %ok : i64
+  }
+}

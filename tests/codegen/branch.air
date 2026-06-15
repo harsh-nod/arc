@@ -1,0 +1,15 @@
+arc.module @codegen_branch {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 5 : i64
+    %b = arc.const 5 : i64
+    %eq = arc.icmp eq %a, %b : i1
+    arc.cond_br %eq, ^yes(), ^no()
+  ^yes:
+    %one = arc.const 1 : i64
+    arc.return %one : i64
+  ^no:
+    %zero = arc.const 0 : i64
+    arc.return %zero : i64
+  }
+}

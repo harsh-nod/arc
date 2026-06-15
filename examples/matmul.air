@@ -1,0 +1,18 @@
+arc.module @matmul {
+  arc.func @dot_product(%a1: i64, %a2: i64, %b1: i64, %b2: i64) -> i64 {
+  ^entry:
+    %p1 = arc.mul %a1, %b1 : i64
+    %p2 = arc.mul %a2, %b2 : i64
+    %sum = arc.add %p1, %p2 : i64
+    arc.return %sum : i64
+  }
+  arc.func @main() -> i64 {
+  ^entry:
+    %a11 = arc.const 1 : i64
+    %a12 = arc.const 2 : i64
+    %b11 = arc.const 3 : i64
+    %b21 = arc.const 4 : i64
+    %c11 = arc.call @dot_product(%a11, %a12, %b11, %b21)
+    arc.return %c11 : i64
+  }
+}

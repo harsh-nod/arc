@@ -1,0 +1,9 @@
+arc.module @bad_type {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 1 : i64
+    %b = arc.const 2 : i32
+    %c = arc.add %a, %b : i64
+    arc.return %c : i64
+  }
+}

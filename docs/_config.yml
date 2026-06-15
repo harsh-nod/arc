@@ -1,0 +1,8 @@
+title: ARC - Agent Representation Compiler
+description: A compiler IR with built-in capabilities, effects, authority, security analysis, and audit traces.
+remote_theme: pages-themes/minimal@v0.2.0
+plugins:
+  - jekyll-remote-theme
+
+show_downloads: false
+google_analytics:

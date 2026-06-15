@@ -1,0 +1,14 @@
+arc.module @parse_multi {
+  arc.func @double(%x: i64) -> i64 {
+  ^entry:
+    %two = arc.const 2 : i64
+    %r = arc.mul %x, %two : i64
+    arc.return %r : i64
+  }
+  arc.func @main() -> i64 {
+  ^entry:
+    %five = arc.const 5 : i64
+    %r = arc.call @double(%five)
+    arc.return %r : i64
+  }
+}

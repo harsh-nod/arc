@@ -1,12 +1,12 @@
-air.module @branching {
-  air.func @select(%cond: i1, %x: i64, %y: i64) -> i64 {
+arc.module @branching {
+  arc.func @select(%cond: i1, %x: i64, %y: i64) -> i64 {
   ^entry:
-    air.cond_br %cond, ^then(%x), ^else(%y)
+    arc.cond_br %cond, ^then(%x), ^else(%y)
   ^then(%a: i64):
-    air.br ^exit(%a)
+    arc.br ^exit(%a)
   ^else(%b: i64):
-    air.br ^exit(%b)
+    arc.br ^exit(%b)
   ^exit(%result: i64):
-    air.return %result : i64
+    arc.return %result : i64
   }
 }

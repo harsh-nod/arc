@@ -1,0 +1,26 @@
+arc.module @file_copy_demo {
+  arc.capability @fs.read {
+    inputs(%path: i64)
+    outputs(%data: i64)
+    effects [#arc.effect<filesystem.read>]
+    failures [#arc.fail<io_error>]
+  }
+
+  arc.capability @fs.write {
+    inputs(%path: i64, %data: i64)
+    outputs(%bytes_written: i64)
+    effects [#arc.effect<filesystem.write>]
+    failures [#arc.fail<io_error>]
+  }
+
+  arc.func @main() -> i64 {
+  ^entry:
+    %src = arc.const 1 : i64
+    %dst = arc.const 2 : i64
+    %auth_read = arc.require_approval %src, %src : !arc.auth<fs.read>
+    %data = arc.invoke @fs.read(%src)
+    %auth_write = arc.require_approval %dst, %data : !arc.auth<fs.write>
+    %written = arc.invoke @fs.write(%dst, %data)
+    arc.return %written : i64
+  }
+}

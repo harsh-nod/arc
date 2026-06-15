@@ -1,0 +1,15 @@
+arc.module @interp_brf {
+  arc.func @main() -> i64 {
+  ^entry:
+    %z = arc.const 0 : i64
+    %one = arc.const 1 : i64
+    %cond = arc.icmp eq %z, %one : i1
+    arc.cond_br %cond, ^yes(), ^no()
+  ^yes:
+    %r1 = arc.const 1 : i64
+    arc.return %r1 : i64
+  ^no:
+    %r2 = arc.const 2 : i64
+    arc.return %r2 : i64
+  }
+}

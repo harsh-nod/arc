@@ -1,0 +1,32 @@
+arc.module @approval_flow {
+  arc.capability @file.write {
+    inputs(%path: i64, %data: i64)
+    outputs(%written: i64)
+    effects [#arc.effect<filesystem.write>]
+    failures [#arc.fail<io_error>]
+  }
+
+  arc.func @check_and_write(%path: i64, %data: i64) -> i64 {
+  ^entry:
+    %zero = arc.const 0 : i64
+    %valid = arc.icmp ne %path, %zero : i1
+    arc.cond_br %valid, ^approved, ^denied
+
+  ^approved:
+    %auth = arc.require_approval %path, %data : !arc.auth<file.write>
+    %result = arc.invoke @file.write(%path, %data)
+    arc.return %result : i64
+
+  ^denied:
+    %neg = arc.const -1 : i64
+    arc.return %neg : i64
+  }
+
+  arc.func @main() -> i64 {
+  ^entry:
+    %path = arc.const 42 : i64
+    %data = arc.const 100 : i64
+    %r = arc.call @check_and_write(%path, %data)
+    arc.return %r : i64
+  }
+}

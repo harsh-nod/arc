@@ -1,0 +1,9 @@
+arc.module @opt_fold {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 3 : i64
+    %b = arc.const 7 : i64
+    %c = arc.add %a, %b : i64
+    arc.return %c : i64
+  }
+}

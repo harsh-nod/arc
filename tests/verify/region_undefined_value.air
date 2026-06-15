@@ -1,0 +1,15 @@
+arc.module @bad_region {
+  arc.func @main() -> i64 {
+  ^entry:
+    %one = arc.const 1 : i64
+    %r = arc.if %one {
+    ^then:
+      arc.yield %undefined_value
+    } else {
+    ^else_body:
+      %b = arc.const 20 : i64
+      arc.yield %b
+    }
+    arc.return %r : i64
+  }
+}

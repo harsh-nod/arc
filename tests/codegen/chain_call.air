@@ -1,0 +1,20 @@
+arc.module @codegen_chain {
+  arc.func @inc(%x: i64) -> i64 {
+  ^entry:
+    %one = arc.const 1 : i64
+    %r = arc.add %x, %one : i64
+    arc.return %r : i64
+  }
+  arc.func @double(%x: i64) -> i64 {
+  ^entry:
+    %r = arc.add %x, %x : i64
+    arc.return %r : i64
+  }
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 5 : i64
+    %b = arc.call @inc(%a)
+    %c = arc.call @double(%b)
+    arc.return %c : i64
+  }
+}

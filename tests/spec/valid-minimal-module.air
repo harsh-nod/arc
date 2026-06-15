@@ -1,8 +1,8 @@
-air.module @m {
-  air.func @add(%a: i64, %b: i64) -> i64 {
+arc.module @m {
+  arc.func @add(%a: i64, %b: i64) -> i64 {
   ^entry:
-    %c = air.const 1 : i64
-    %d = air.add %a, %b : i64
-    air.return %d : i64
+    %c = arc.const 1 : i64
+    %d = arc.add %a, %b : i64
+    arc.return %d : i64
   }
 }

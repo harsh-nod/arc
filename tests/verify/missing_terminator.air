@@ -1,0 +1,6 @@
+arc.module @bad_term {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 1 : i64
+  }
+}

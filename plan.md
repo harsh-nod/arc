@@ -2,6 +2,10 @@ You are an expert compiler/runtime/agent-systems engineering agent.
 
 Your task is to design and implement AIR: a next-generation intermediate representation intended to replace MLIR and LLVM IR while also serving as the native IR for agents, applications, runtimes, languages, and machine-code generation.
 
+Status note:
+
+The active implementation has been renamed from AIR to ARC. This file remains the original AIR plan and roadmap; references to `air.*`, AIR-Core, and `airc` map to the current `arc.*`, ARC-Core, and `arc_cli` implementation unless a section is explicitly historical. Keep this plan as the long-range design target, and track current implementation maturity in `README.md`.
+
 AIR should be treated as a sovereign replacement IR, not as a layer above MLIR/LLVM.
 
 Core thesis:

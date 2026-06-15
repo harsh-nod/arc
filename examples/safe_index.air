@@ -1,0 +1,19 @@
+arc.module @safe_index {
+  arc.func @bounds_check(%idx: i64, %len: i64) -> i64 {
+  ^entry:
+    %in_bounds = arc.icmp slt %idx, %len : i1
+    arc.cond_br %in_bounds, ^ok, ^err
+  ^ok:
+    arc.return %idx : i64
+  ^err:
+    %neg_one = arc.const -1 : i64
+    arc.return %neg_one : i64
+  }
+  arc.func @main() -> i64 {
+  ^entry:
+    %idx = arc.const 3 : i64
+    %len = arc.const 10 : i64
+    %result = arc.call @bounds_check(%idx, %len)
+    arc.return %result : i64
+  }
+}

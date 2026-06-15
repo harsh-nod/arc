@@ -1,0 +1,12 @@
+arc.module @interp_loop {
+  arc.func @main() -> i64 {
+  ^entry:
+    %r = arc.loop iter_args(%acc) {
+    ^body(%counter: i64):
+      %ten = arc.const 10 : i64
+      %next = arc.add %counter, %ten : i64
+      arc.yield %next
+    }
+    arc.return %r : i64
+  }
+}

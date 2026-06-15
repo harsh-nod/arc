@@ -1,0 +1,14 @@
+arc.module @async_pipeline {
+  arc.func @worker() -> i64 {
+  ^entry:
+    %value = arc.const 42 : i64
+    arc.return %value : i64
+  }
+
+  arc.func @main() -> i64 {
+  ^entry:
+    %task = arc.spawn @worker()
+    %value = arc.await %task
+    arc.return %value : i64
+  }
+}

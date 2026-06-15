@@ -1,0 +1,8 @@
+arc.module @bad_dup {
+  arc.func @main() -> i64 {
+  ^entry:
+    %a = arc.const 1 : i64
+    %a = arc.const 2 : i64
+    arc.return %a : i64
+  }
+}

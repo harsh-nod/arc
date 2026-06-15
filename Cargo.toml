@@ -1,25 +1,42 @@
 [workspace]
+resolver = "2"
 members = [
-    "crates/air_cli",
-    "crates/air_ir",
-    "crates/air_syntax",
-    "crates/air_types",
-    "crates/air_verify",
-    "crates/air_effects",
-    "crates/air_proof",
-    "crates/air_pass",
-    "crates/air_interp",
-    "crates/air_runtime",
-    "crates/air_codegen",
-    "crates/air_targets",
-    "crates/air_object",
-    "crates/air_pkg",
+    "crates/arc_cli",
+    "crates/arc_ir",
+    "crates/arc_syntax",
+    "crates/arc_types",
+    "crates/arc_verify",
+    "crates/arc_effects",
+    "crates/arc_proof",
+    "crates/arc_pass",
+    "crates/arc_interp",
+    "crates/arc_runtime",
+    "crates/arc_codegen",
+    "crates/arc_targets",
+    "crates/arc_object",
+    "crates/arc_pkg",
+    "crates/arc_lower",
+    "crates/arc_difftest",
+    "crates/arc_security",
+    "crates/arc_lang",
+    "crates/arc_memory",
+    "crates/arc_dialects",
+    "crates/arc_async",
+    "crates/arc_format",
 ]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.76"
+description = "A compiler IR with first-class capabilities, effects, authority, security analysis, and audit traces."
+repository = "https://github.com/harsh-nod/arc"
+homepage = "https://harsh-nod.github.io/arc"
+documentation = "https://harsh-nod.github.io/arc"
+readme = "README.md"
+keywords = ["compiler", "ir", "security", "agents", "wasm"]
+categories = ["compilers", "command-line-utilities", "development-tools"]
 
 [workspace.dependencies]
 anyhow = "1.0"

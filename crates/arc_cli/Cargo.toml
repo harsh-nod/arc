@@ -1,0 +1,33 @@
+[package]
+name = "arc_cli"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "arcc"
+path = "src/main.rs"
+
+[dependencies]
+arc_ir = { path = "../arc_ir", version = "0.1.0" }
+arc_syntax = { path = "../arc_syntax", version = "0.1.0" }
+arc_verify = { path = "../arc_verify", version = "0.1.0" }
+arc_interp = { path = "../arc_interp", version = "0.1.0" }
+arc_pass = { path = "../arc_pass", version = "0.1.0" }
+arc_lower = { path = "../arc_lower", version = "0.1.0" }
+arc_codegen = { path = "../arc_codegen", version = "0.1.0" }
+arc_targets = { path = "../arc_targets", version = "0.1.0" }
+arc_difftest = { path = "../arc_difftest", version = "0.1.0" }
+arc_security = { path = "../arc_security", version = "0.1.0" }
+arc_format = { path = "../arc_format", version = "0.1.0" }
+arc_object = { path = "../arc_object", version = "0.1.0" }
+anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }

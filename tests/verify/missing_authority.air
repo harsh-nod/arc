@@ -1,0 +1,16 @@
+arc.module @missing_authority {
+  arc.capability @email.send {
+    inputs(%to: i64, %body: i64)
+    outputs(%status: i64)
+    effects [#arc.effect<network>]
+    failures [#arc.fail<delivery_error>]
+  }
+
+  arc.func @main() -> i64 {
+  ^entry:
+    %to = arc.const 1 : i64
+    %body = arc.const 2 : i64
+    %status = arc.invoke @email.send(%to, %body)
+    arc.return %status : i64
+  }
+}
