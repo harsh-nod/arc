@@ -1898,28 +1898,25 @@ fn check_proof_obligations(module: &Module) -> Vec<String> {
                             }
                         }
                     }
-                    OperationKind::LoadElem => {
+                    OperationKind::LoadElem if op.operands.len() >= 3 => {
                         // Bounds check: if there's a proof operand, verify it
-                        if op.operands.len() >= 3 {
-                            // Has index proof — check bounds
-                            let _base = &op.operands[0];
-                            let index = &op.operands[1];
-                            let obligation = arc_proof::ProofObligation {
-                                kind: arc_proof::ObligationKind::BoundsCheck {
-                                    index: arc_proof::Expr::var(index.as_str()),
-                                    bound: arc_proof::Expr::var("__array_len"),
-                                },
-                                description: format!(
-                                    "bounds check in {}: %{}",
-                                    func.name,
-                                    index.as_str()
-                                ),
-                                context: proof_ctx.clone(),
-                            };
-                            let result = arc_proof::discharge_with_solver(&obligation, &solver);
-                            if !result.is_proved() {
-                                unproved.push(obligation.description);
-                            }
+                        let _base = &op.operands[0];
+                        let index = &op.operands[1];
+                        let obligation = arc_proof::ProofObligation {
+                            kind: arc_proof::ObligationKind::BoundsCheck {
+                                index: arc_proof::Expr::var(index.as_str()),
+                                bound: arc_proof::Expr::var("__array_len"),
+                            },
+                            description: format!(
+                                "bounds check in {}: %{}",
+                                func.name,
+                                index.as_str()
+                            ),
+                            context: proof_ctx.clone(),
+                        };
+                        let result = arc_proof::discharge_with_solver(&obligation, &solver);
+                        if !result.is_proved() {
+                            unproved.push(obligation.description);
                         }
                     }
                     _ => {}
