@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f172a">
+    <title>{% if page.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
+    <meta name="description" content="{{ site.description }}">
+    <link rel="stylesheet" href="{{ '/assets/css/aex-theme.css' | relative_url }}">
+  </head>
+  <body>
+    <div class="pre-release-banner">
+      ARC is an early-stage research compiler prototype. APIs may change before v1.0.
+      <a href="{{ '/release' | relative_url }}">Release guide &rarr;</a>
+    </div>
+
+    <header class="VPNav">
+      <div class="nav-inner">
+        <a class="brand" href="{{ '/' | relative_url }}">ARC</a>
+        <nav class="top-nav" aria-label="Primary navigation">
+          <a href="{{ '/getting-started' | relative_url }}">Quickstart</a>
+          <a href="{{ '/language-reference' | relative_url }}">Language</a>
+          <a href="{{ '/examples' | relative_url }}">Examples</a>
+          <a href="{{ '/cli' | relative_url }}">CLI</a>
+          <a href="{{ '/security' | relative_url }}">Security</a>
+          <a href="https://github.com/harsh-nod/arc">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="site-shell">
+      <aside class="VPSidebar">
+        <nav aria-label="Documentation navigation">
+          <div class="sidebar-section">
+            <h2>Getting Started</h2>
+            <a href="{{ '/' | relative_url }}">Overview</a>
+            <a href="{{ '/getting-started' | relative_url }}">Quickstart</a>
+            <a href="{{ '/cli' | relative_url }}">CLI Reference</a>
+          </div>
+          <div class="sidebar-section">
+            <h2>Core ARC</h2>
+            <a href="{{ '/language-reference' | relative_url }}">Language Reference</a>
+            <a href="{{ '/authority-effects' | relative_url }}">Authority and Effects</a>
+            <a href="{{ '/architecture' | relative_url }}">Architecture</a>
+            <a href="{{ '/package-format' | relative_url }}">Package Format</a>
+          </div>
+          <div class="sidebar-section">
+            <h2>Examples</h2>
+            <a href="{{ '/examples' | relative_url }}">Examples Catalog</a>
+            <a href="{{ '/security' | relative_url }}">Security Model</a>
+            <a href="{{ '/conformance' | relative_url }}">Conformance</a>
+          </div>
+          <div class="sidebar-section">
+            <h2>Community</h2>
+            <a href="{{ '/release' | relative_url }}">Release Guide</a>
+            <a href="https://github.com/harsh-nod/arc">Repository</a>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="VPDoc">
+        <div class="VPContent">
+          <article class="content vp-doc _aex_">
+            {{ content }}
+          </article>
+        </div>
+      </main>
+    </div>
+
+    <footer class="VPFooter">
+      <p class="message">Effects are tracked. Authority is explicit.</p>
+      <p class="copyright">&copy; {{ "now" | date: "%Y" }} ARC contributors.</p>
+    </footer>
+  </body>
+</html>

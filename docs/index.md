@@ -3,147 +3,117 @@ layout: default
 title: ARC
 ---
 
-# ARC: Agent Representation Compiler
+<div class="hero-intro">
+  <h1>The Capability-Aware Compiler IR</h1>
+  <p class="hero-tagline">
+    Effects. Authority. Proofs. Traces.<br>One IR for programs that act in the real world.
+  </p>
+  <p class="hero-subtitle"><em>Opaque calls are not enough when software can send, spend, mutate, and persist.</em></p>
+  <div class="hero-actions">
+    <a class="action primary" href="{{ '/getting-started' | relative_url }}">Get Started</a>
+    <a class="action" href="{{ '/authority-effects' | relative_url }}">Authority and Effects</a>
+    <a class="action" href="https://github.com/harsh-nod/arc">View on GitHub</a>
+  </div>
+</div>
 
-ARC is a compiler intermediate representation for programs that interact with the outside world through **capabilities** - external actions like sending email, reading files, calling APIs, or writing files - with **authority**, **effects**, and **security** tracked by the compiler.
+## How It Works
 
-Unlike traditional IRs (MLIR, LLVM IR), ARC makes dangerous operations visible and verifiable:
+<div class="pipeline">
+  <div class="pipeline-node">parse</div>
+  <div class="pipeline-arrow"><svg viewBox="0 0 32 12"><line x1="0" y1="6" x2="24" y2="6"/><polygon points="24,2 32,6 24,10"/></svg></div>
+  <div class="pipeline-node">verify</div>
+  <div class="pipeline-arrow"><svg viewBox="0 0 32 12"><line x1="0" y1="6" x2="24" y2="6"/><polygon points="24,2 32,6 24,10"/></svg></div>
+  <div class="pipeline-node">optimize</div>
+  <div class="pipeline-arrow"><svg viewBox="0 0 32 12"><line x1="0" y1="6" x2="24" y2="6"/><polygon points="24,2 32,6 24,10"/></svg></div>
+  <div class="pipeline-node">lower</div>
+  <div class="pipeline-arrow"><svg viewBox="0 0 32 12"><line x1="0" y1="6" x2="24" y2="6"/><polygon points="24,2 32,6 24,10"/></svg></div>
+  <div class="pipeline-node">codegen</div>
+</div>
 
+ARC is a compiler intermediate representation for programs that interact with the outside world through **capabilities**: external actions like sending email, reading files, calling APIs, or writing files. Capability declarations expose effects, failure modes, and authority requirements to the verifier, optimizer, runtime, and audit trail.
+
+<div class="demo-grid">
+<div class="demo-panel demo-danger" markdown="1">
+<h4>Traditional IR</h4>
+
+```llvm
+call i64 @email_send(i64 %to, i64 %body)
 ```
-arc.module @send_email_demo {
-  arc.capability @email.send {
-    inputs(%to: i64, %body: i64)
-    outputs(%status: i64)
-    effects [#arc.effect<network>, #arc.effect<irreversible>]
-    failures [#arc.fail<delivery_error>]
-  }
 
-  arc.func @main() -> i64 {
-  ^entry:
-    %to   = arc.const 1 : i64
-    %body = arc.const 2 : i64
+The compiler sees a call. It does not know whether the call is pure, reversible, networked, financial, authorized, retryable, or safe to reorder.
+</div>
 
-    // This operation requires explicit approval before proceeding
-    %auth = arc.require_approval %to, %body : !arc.auth<email.send>
+<div class="demo-panel demo-safe" markdown="1">
+<h4>ARC</h4>
 
-    // The capability invocation is a first-class IR operation
-    %status = arc.invoke @email.send(%to, %body)
-    arc.return %status : i64
-  }
+```air
+arc.capability @email.send {
+  inputs(%to: i64, %body: i64)
+  outputs(%status: i64)
+  effects [#arc.effect<network>, #arc.effect<irreversible>]
+  failures [#arc.fail<delivery_error>]
 }
+
+%auth = arc.require_approval %to, %body : !arc.auth<email.send>
+%status = arc.invoke @email.send(%to, %body)
 ```
 
-In LLVM, `email.send` would be a function call indistinguishable from `strlen`. In ARC, the compiler **knows** it's irreversible, has network effects, can fail, and requires human approval.
-
----
+The compiler can verify authority, preserve effects, detect confidential leaks, and emit an execution trace.
+</div>
+</div>
 
 ## Why ARC?
 
-AI systems increasingly act in the real world — booking flights, sending messages, modifying files, executing trades. Traditional compiler IRs treat all function calls equally. ARC doesn't.
-
-**Capabilities are declared, not hidden.** Every external action has a name, typed inputs/outputs, declared effects, and enumerated failure modes. The compiler can verify that your program handles failures and obtains authority before acting.
-
-**Effects are tracked, not guessed.** ARC's effect system distinguishes 18 categories (filesystem, network, financial, credential, irreversible, ...) with commutativity analysis. The optimizer knows which operations can safely reorder and which are anchored.
-
-**Security is built in, not bolted on.** Information-flow analysis, taint tracking, and sandbox enforcement run at compile time. Confidential data can't leak to external sinks without explicit declassification. Tainted user input can't flow to approval operations.
-
-**Proofs are first-class.** Bounds checks, preconditions, and authority requirements can be expressed as proof obligations that the compiler discharges statically or inserts as runtime checks.
-
----
+<div class="landing-grid">
+  <article class="card">
+    <h3>Capabilities are declared</h3>
+    <p>Every external action has a name, typed inputs and outputs, declared effects, and enumerated failure modes.</p>
+  </article>
+  <article class="card">
+    <h3>Authority is explicit</h3>
+    <p><code>arc.invoke</code> requires an available matching <code>!arc.auth&lt;capability&gt;</code> token produced by <code>require_approval</code>.</p>
+  </article>
+  <article class="card">
+    <h3>Effects are tracked</h3>
+    <p>The effect lattice distinguishes memory, filesystem, network, irreversible, financial, credential, and other observable effects.</p>
+  </article>
+  <article class="card">
+    <h3>Security is built in</h3>
+    <p>Information-flow, taint, sandbox, proof, and memory checks run over the IR instead of relying on prompt discipline.</p>
+  </article>
+</div>
 
 ## Quick Start
 
 ```bash
-# Build from source
 git clone https://github.com/harsh-nod/arc.git
 cd arc
 cargo build --release
+cargo install --path crates/arc_cli
 
-# Parse and verify a program
-arcc verify examples/hello.air
-
-# Run a program through the interpreter
-arcc run examples/hello.air
-# Output: 10
-
-# Compile to WebAssembly
-arcc codegen examples/hello.air --target wasm32
-
-# Run security analysis
+arcc verify examples/send_email.air
 arcc audit examples/send_email.air
-
-# Optimize a program
-arcc opt examples/hello.air --passes const_fold,dce
+arcc run examples/hello.air
+arcc codegen examples/hello.air --target wasm32
 ```
-
----
 
 ## Documentation
 
-- [Getting Started](getting-started) — Install, write your first program, understand the CLI
-- [Language Reference](language-reference) — Complete `.air` syntax and operation reference
-- [Examples](examples) — Annotated programs showing capabilities, effects, branching, async
-- [CLI Reference](cli) — Command-by-command reference for `arcc`
-- [Authority and Effects](authority-effects) — Capability effects, approval tokens, and verifier rules
-- [Architecture](architecture) — How the compiler pipeline works
-- [Security](security) — Information-flow analysis, taint tracking, sandbox policies
-- [Conformance](conformance) — Test suites, fuzz smoke tests, and release verification
-- [Package and Binary Format](package-format) — Experimental module/package serialization
-- [Release Guide](release) — Maintainer checklist for public releases
-
----
-
-## The ARC Pipeline
-
-```
-  .air source
-      |
-   [ Parse ]          Recursive descent parser
-      |
-   [ Verify ]         SSA, types, effects, authority, proofs
-      |
-   [ Optimize ]       Constant fold, DCE, CSE, strength reduction
-      |
-   [ Lower ]          Structured CF -> flat CFG, async -> sequential,
-      |               invoke -> call, proof erasure
-      |
-   [ Codegen ]        x86-64 ELF or WebAssembly
-      |
-   .o / .wasm
-```
-
-The interpreter can run programs directly after verification, producing execution traces with full effect and authority audit trails.
-
----
-
-## What Makes ARC Different
-
-| Feature | LLVM IR | MLIR | ARC |
-|---------|---------|------|-----|
-| Capabilities | No | No | Declared with effects, failures, authority |
-| Effect tracking | No | Side-effect traits | 18-category lattice with commutativity |
-| Authority / approval | No | No | `require_approval` + authority tokens |
-| Information flow | No | No | 4-level classification + taint tracking |
-| Proof obligations | No | No | First-class proof objects, discharge at compile time |
-| Async / checkpoints | No | No | `spawn`, `await`, `checkpoint` as IR operations |
-| Execution traces | No | No | Full audit trail with effect + authority events |
-
----
-
-## Runtime Integration
-
-ARC declares the **facts** about your program: what capabilities it uses, what effects it has, what authority it needs, and what proofs it carries. Runtime integrations can use those facts to dispatch capabilities, enforce authority, sandbox effects, and audit execution.
-
----
+| Page | Description |
+|------|-------------|
+| [Getting Started](getting-started) | Install, first program, CLI walkthrough |
+| [Language Reference](language-reference) | Complete `.air` syntax and operation reference |
+| [Examples](examples) | Annotated programs with capabilities, effects, branching, async |
+| [CLI Reference](cli) | Command-by-command reference for `arcc` |
+| [Authority and Effects](authority-effects) | Capability effects, approval tokens, and verifier rules |
+| [Architecture](architecture) | Compiler pipeline, crate map, stage descriptions |
+| [Security](security) | Information-flow analysis, taint tracking, sandbox policies |
+| [Conformance](conformance) | Test suites, fuzz smoke tests, and release verification |
+| [Package and Binary Format](package-format) | Experimental module/package serialization |
+| [Release Guide](release) | Maintainer checklist for public releases |
 
 ## Project Status
 
-ARC is an early-stage research project. The core pipeline (parse, verify, interpret, optimize, lower, codegen) works end-to-end with the repository test suite. The unique features (capabilities, effects, authority, security analysis) are functional for the documented subset and covered by tests.
+ARC is an early-stage research project. The core pipeline works end-to-end for the documented subset: parsing, verification, interpretation, traces, optimization, lowering, x86-64 codegen, WebAssembly codegen, security analysis, proof checks, and package-format experiments.
 
-What's still evolving: dialect extensibility, SMT-backed proof solving, runtime capability dispatch, dependent types.
-
----
-
-## License
-
-Apache-2.0
+Still evolving: dialect extensibility, SMT-backed proof solving, runtime capability dispatch, dependent types, and stable binary/package formats.
